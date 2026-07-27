@@ -9724,6 +9724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var statusPopoverEventMonitors: [Any] = []
     private var statusItemAppearanceObservation: NSKeyValueObservation?
     private var activeSpaceObserver: NSObjectProtocol?
+    private var dynamicIslandController: DynamicIslandWindowController?
     private var globalHotKeyRef: EventHotKeyRef?
     private var globalHotKeyHandler: EventHandlerRef?
     private var cancellables = Set<AnyCancellable>()
@@ -9766,6 +9767,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
         store.updateVisibleRuntimeScopes(settings.visibleRuntimeScopes)
         store.start()
+        setupDynamicIsland()
         updateStore.startAutomaticCheck()
         if CommandLine.arguments.contains("--show-status-popover") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -9807,6 +9809,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         showMainWindow()
     }
 
+    private func setupDynamicIsland() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let controller = DynamicIslandWindowController(
+                store: store,
+                settings: settings,
+                systemMonitor: LocalSystemMonitor(),
+                openMainWindow: { [weak self] in
+                    self?.showMainWindow()
+                }
+            )
+            dynamicIslandController = controller
+            controller.show()
+        }
+    }
+
+    private func stopDynamicIsland() {
+        let controller = dynamicIslandController
+        dynamicIslandController = nil
+        Task { @MainActor in
+            controller?.stop()
+        }
+    }
+
     private func installTitlebarToolbar(on window: NSWindow) {
         let toolbarView = NSHostingView(
             rootView: TitlebarToolbarView(
@@ -9834,6 +9860,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             self.activeSpaceObserver = nil
         }
         unregisterGlobalHotKey()
+        stopDynamicIsland()
         store.stop()
     }
 
@@ -10500,6 +10527,10 @@ struct codexUMain {
 
         if CommandLine.arguments.contains("--self-test-codex-token-events") {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-dynamic-island") {
+            exit(DynamicIslandPresentationSelfTest.run() ? 0 : 1)
         }
 
         if CommandLine.arguments.contains("--dump-json") {

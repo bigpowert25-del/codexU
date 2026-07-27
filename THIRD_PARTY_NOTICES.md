@@ -47,6 +47,35 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Dynamic Island inspiration and local prototype
+
+The local Dynamic Island prototype reuses or adapts ideas from the following
+open-source projects:
+
+- CodexIsland by Eric Park: https://github.com/ericjypark/codex-island
+  - License: MIT
+  - Used as a reference for a native macOS Codex usage island, compact / peek /
+    expanded presentation, and local-first usage display patterns.
+- Ping Island by erha19: https://github.com/erha19/ping-island
+  - License: Apache License 2.0
+  - Used as a reference for multi-agent session/status modeling, attention-first
+    sorting, and Codex/OpenClaw/Hermes-style provider surfaces.
+- Dynamic Island for Windows by sadeeshasathsara:
+  https://github.com/sadeeshasathsara/dynamic-island-on-windows
+  - License: MIT
+  - Copied into `WindowsIsland/` as the Windows WPF prototype base, then renamed
+    and adapted for codexU local JSON snapshots. The copied folder retains its
+    original `LICENSE`.
+
+The following projects were reviewed but treated as reference-only for
+public-safe code in this repository:
+
+- eIsland by JNTMTMTM: GPLv3 with additional clauses and platform restriction.
+- MioIsland by MioMioOS: CC BY-NC 4.0.
+- Python-island/Python-island: no root license file found in the reviewed clone.
+- rajsriv/dynamic-island-for-windows: README links MIT, but no `LICENSE` file
+  was present in the reviewed clone.
+
 ## Hermes Agent
 
 The Hermes runtime integration follows the default-profile session database
