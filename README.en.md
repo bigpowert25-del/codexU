@@ -11,11 +11,19 @@ The OpenClaw integration follows the local formats and brand resources from [ope
 
 codexU is a macOS menu bar and desktop app for tracking Codex quota, separate Codex/companion-Agent token usage, and a unified task board.
 
+![codexU v1.2.0 right-side vertical Dynamic Island and local system status](docs/screenshot-v1.2.0-dynamic-island-right.png)
+
 ![codexU v1.1.0 main window with Codex and OpenClaw](docs/screenshot-v1.1.0-main-openclaw.png)
 
 ![codexU v1.1.0 companion Agent selector](docs/screenshot-v1.1.0-agent-settings.png)
 
 ![codexU v1.1.0 Runtime menu](docs/screenshot-v1.1.0-runtime-menu.png)
+
+## v1.2.0 Dynamic Island and Desktop Status
+
+v1.2.0 adds a local macOS Dynamic Island overlay and a lightweight Windows Dynamic Island experiment. The macOS overlay reuses codexU's existing data path for Codex quota, Codex / companion-Agent token accounting, task source labels, local CPU, memory, and temperature / thermal state. It does not introduce a second usage counter.
+
+The island supports a horizontal top capsule plus vertical left and right capsules. Normal left-click still expands or collapses the island. Holding the left and right mouse buttons together enables reposition dragging; releasing snaps the island to the nearest screen edge. Quota rendering follows the live Codex response: when only a 7-day window is available, codexU shows `7d` only and does not invent a missing 5-hour reset.
 
 ## v1.1.4 Profile-Matched Metrics
 
@@ -175,10 +183,10 @@ make release-all
 Release artifacts are written to `dist/`, for example:
 
 ```text
-dist/codexU-1.1.4-mac-arm64.dmg
-dist/codexU-1.1.4-mac-arm64.dmg.sha256
-dist/codexU-1.1.4-mac-x86_64.dmg
-dist/codexU-1.1.4-mac-x86_64.dmg.sha256
+dist/codexU-1.2.0-mac-arm64.dmg
+dist/codexU-1.2.0-mac-arm64.dmg.sha256
+dist/codexU-1.2.0-mac-x86_64.dmg
+dist/codexU-1.2.0-mac-x86_64.dmg.sha256
 ```
 
 For Developer ID signing and notarization, see [DISTRIBUTION.md](DISTRIBUTION.md).
@@ -221,7 +229,7 @@ Yes. Intel Macs should use `codexU-<version>-mac-x86_64.dmg`. From source, packa
 
 ### Can OpenClaw, Claude Code, and Hermes all be shown at once?
 
-No. v1.1.0 deliberately uses “Codex + one companion Agent.” This avoids scanning tools you are not using and keeps attribution and the menu bar clear. New Agents are added through independent providers without changing the existing providers' accounting.
+No. The current model deliberately uses “Codex + one companion Agent.” This avoids scanning tools you are not using and keeps attribution and the menu bar clear. New Agents are added through independent providers without changing the existing providers' accounting.
 
 ## License
 

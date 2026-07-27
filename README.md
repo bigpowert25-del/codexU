@@ -15,11 +15,19 @@ codexU 是一个 macOS 菜单栏与桌面应用，用来查看 Codex 额度、Co
 
 ## 界面截图
 
+![codexU v1.2.0 右侧竖向动态岛与本机状态](docs/screenshot-v1.2.0-dynamic-island-right.png)
+
 ![codexU v1.1.0 Codex 与 OpenClaw 主界面](docs/screenshot-v1.1.0-main-openclaw.png)
 
 ![codexU v1.1.0 第二 Agent 单选设置](docs/screenshot-v1.1.0-agent-settings.png)
 
 ![codexU v1.1.0 菜单栏 Runtime 状态](docs/screenshot-v1.1.0-runtime-menu.png)
+
+## v1.2.0 动态岛与桌面状态
+
+v1.2.0 新增 macOS 本机动态岛浮窗和 Windows 动态岛试验原型。macOS 版本直接复用 codexU 现有数据：Codex 额度、Codex / 第二 Agent 各自 token、任务来源、本机 CPU、内存与温度/热状态都来自同一套统计管线，不重复计算。
+
+动态岛支持顶部横向胶囊、左侧竖向胶囊、右侧竖向胶囊。普通左键仍用于展开/收起；同时按住左键和右键拖动时可以移动位置，松开后自动吸附到最近边缘。额度显示会自动识别 Codex 当前返回的窗口，只有 7 天额度时只显示 `7d`，不再伪造已经不存在的 5 小时重置。
 
 ## v1.1.4 与个人资料同口径显示
 
@@ -194,10 +202,10 @@ make release-all
 产物会写入 `dist/`，例如：
 
 ```text
-dist/codexU-1.1.4-mac-arm64.dmg
-dist/codexU-1.1.4-mac-arm64.dmg.sha256
-dist/codexU-1.1.4-mac-x86_64.dmg
-dist/codexU-1.1.4-mac-x86_64.dmg.sha256
+dist/codexU-1.2.0-mac-arm64.dmg
+dist/codexU-1.2.0-mac-arm64.dmg.sha256
+dist/codexU-1.2.0-mac-x86_64.dmg
+dist/codexU-1.2.0-mac-x86_64.dmg.sha256
 ```
 
 Developer ID 签名和 Apple notarization 流程见 [DISTRIBUTION.md](DISTRIBUTION.md)。
@@ -240,7 +248,7 @@ Developer ID 签名和 Apple notarization 流程见 [DISTRIBUTION.md](DISTRIBUTI
 
 ### 可以同时显示 OpenClaw、Claude Code 和 Hermes 吗？
 
-不能。v1.1.0 的模型是“Codex 固定 + 一个第二 Agent”：在设置中三选一，避免后台扫描未使用的工具，也让 token 归属和菜单栏保持清晰。新增 Agent 通过独立 Provider 接入，不需要改动现有 Provider 的统计。
+不能。当前模型是“Codex 固定 + 一个第二 Agent”：在设置中三选一，避免后台扫描未使用的工具，也让 token 归属和菜单栏保持清晰。新增 Agent 通过独立 Provider 接入，不需要改动现有 Provider 的统计。
 
 ## License
 

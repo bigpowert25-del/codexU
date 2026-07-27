@@ -164,3 +164,9 @@ rollback_status: ready
   - `plutil -lint Resources/Info.plist`: passed;
   - `git diff --check`: passed.
 - Windows WPF limitation: `dotnet` is not installed on this Mac, so `WindowsIsland/CodexUIsland.csproj` was not compiled locally before upload.
+
+## Version marking update
+
+- User confirmed this feature set should be versioned as `1.2.0`.
+- Updated app version metadata from `1.1.4 (23)` to `1.2.0 (24)`.
+- Added v1.2.0 release notes and a cropped public README screenshot showing the right-side vertical Dynamic Island, avoiding the full desktop capture.
