@@ -170,3 +170,14 @@ rollback_status: ready
 - User confirmed this feature set should be versioned as `1.2.0`.
 - Updated app version metadata from `1.1.4 (23)` to `1.2.0 (24)`.
 - Added v1.2.0 release notes and a cropped public README screenshot showing the right-side vertical Dynamic Island, avoiding the full desktop capture.
+
+## Display surface mode update
+
+- User requirement: “灵动岛和原有的版本可以同时选，也可以二选一”.
+- Added a persisted display-surface setting with three choices:
+  - original app + Dynamic Island;
+  - original app only;
+  - Dynamic Island only.
+- Default remains original app + Dynamic Island, preserving the previous v1.2.0 prototype behavior.
+- Dynamic-Island-only mode does not create the menu bar item or auto-show the main dashboard on launch; expanding the island can still open the dashboard temporarily.
+- Added `--self-test-display-surface` and `make test-display-surface` coverage for default, persistence, invalid fallback, and per-mode surface capability flags.

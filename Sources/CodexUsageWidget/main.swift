@@ -3225,6 +3225,43 @@ enum ParticleAnimationMode: String, CaseIterable, Equatable {
     }
 }
 
+enum DisplaySurfaceMode: String, CaseIterable, Equatable {
+    case classicAndDynamicIsland = "classicAndDynamicIsland"
+    case classicOnly = "classicOnly"
+    case dynamicIslandOnly = "dynamicIslandOnly"
+
+    static let storageKey = "codexU.displaySurfaceMode"
+
+    var includesClassicSurface: Bool {
+        switch self {
+        case .classicAndDynamicIsland, .classicOnly:
+            return true
+        case .dynamicIslandOnly:
+            return false
+        }
+    }
+
+    var includesDynamicIsland: Bool {
+        switch self {
+        case .classicAndDynamicIsland, .dynamicIslandOnly:
+            return true
+        case .classicOnly:
+            return false
+        }
+    }
+
+    static func storedOrDefault(defaults: UserDefaults = .standard) -> DisplaySurfaceMode {
+        guard let rawValue = defaults.string(forKey: storageKey),
+              let mode = DisplaySurfaceMode(rawValue: rawValue)
+        else { return .classicAndDynamicIsland }
+        return mode
+    }
+
+    func persist(defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.storageKey)
+    }
+}
+
 final class AppSettings: ObservableObject {
     private static let keepMainWindowOnTopKey = "codexU.keepMainWindowOnTop"
     private static let keepRunningWhenMainWindowClosedKey = "codexU.keepRunningWhenMainWindowClosed"
@@ -3252,6 +3289,12 @@ final class AppSettings: ObservableObject {
     @Published var particleAnimationMode: ParticleAnimationMode {
         didSet {
             particleAnimationMode.persist(defaults: defaults)
+        }
+    }
+
+    @Published var displaySurfaceMode: DisplaySurfaceMode {
+        didSet {
+            displaySurfaceMode.persist(defaults: defaults)
         }
     }
 
@@ -3308,6 +3351,7 @@ final class AppSettings: ObservableObject {
         language = WidgetLanguage.storedOrAutomatic(defaults: defaults)
         themeMode = WidgetThemeMode.storedOrAutomatic(defaults: defaults)
         particleAnimationMode = ParticleAnimationMode.storedOrDefault(defaults: defaults)
+        displaySurfaceMode = DisplaySurfaceMode.storedOrDefault(defaults: defaults)
         keepMainWindowOnTop = defaults.bool(forKey: Self.keepMainWindowOnTopKey)
         if defaults.object(forKey: Self.keepRunningWhenMainWindowClosedKey) == nil {
             keepRunningWhenMainWindowClosed = true
@@ -4180,6 +4224,33 @@ struct SettingsPanelView: View {
                                 SettingsSegmentOption(value: .powerSaving, title: language.text("省电", "Power Saving"))
                             ],
                             width: 190
+                        )
+                    }
+
+                    SettingsPickerRow(
+                        title: language.text("显示入口", "Display surface"),
+                        detail: language.text(
+                            "可同时显示原有面板和灵动岛，也可二选一",
+                            "Show the original dashboard, Dynamic Island, or both"
+                        )
+                    ) {
+                        SettingsSegmentedControl(
+                            selection: $settings.displaySurfaceMode,
+                            options: [
+                                SettingsSegmentOption(
+                                    value: .classicAndDynamicIsland,
+                                    title: language.text("双开", "Both")
+                                ),
+                                SettingsSegmentOption(
+                                    value: .classicOnly,
+                                    title: language.text("原有", "Classic")
+                                ),
+                                SettingsSegmentOption(
+                                    value: .dynamicIslandOnly,
+                                    title: language.text("灵动岛", "Island")
+                                )
+                            ],
+                            width: 238
                         )
                     }
                 }
@@ -6218,6 +6289,80 @@ private enum QuotaParticleAnimationSelfTest {
             return true
         }
         failures.forEach { print("particle animation self-test failed: \($0)") }
+        return false
+    }
+}
+
+private enum DisplaySurfaceModeSelfTest {
+    static func run() -> Bool {
+        var failures: [String] = []
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            if !condition() {
+                failures.append(message)
+            }
+        }
+
+        let suiteName = "codexU.display-surface-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            print("display surface self-test failed: could not create UserDefaults suite")
+            return false
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        expect(
+            DisplaySurfaceMode.storedOrDefault(defaults: defaults) == .classicAndDynamicIsland,
+            "missing display surface preference should default to classic + dynamic island"
+        )
+
+        let settings = AppSettings(defaults: defaults)
+        settings.displaySurfaceMode = .dynamicIslandOnly
+        expect(
+            defaults.string(forKey: DisplaySurfaceMode.storageKey) == DisplaySurfaceMode.dynamicIslandOnly.rawValue,
+            "display surface preference should persist immediately"
+        )
+        expect(
+            AppSettings(defaults: defaults).displaySurfaceMode == .dynamicIslandOnly,
+            "display surface preference should survive AppSettings recreation"
+        )
+
+        expect(
+            DisplaySurfaceMode.classicAndDynamicIsland.includesClassicSurface,
+            "combined mode should include the original app surface"
+        )
+        expect(
+            DisplaySurfaceMode.classicAndDynamicIsland.includesDynamicIsland,
+            "combined mode should include dynamic island"
+        )
+        expect(
+            DisplaySurfaceMode.classicOnly.includesClassicSurface,
+            "classic-only mode should include the original app surface"
+        )
+        expect(
+            !DisplaySurfaceMode.classicOnly.includesDynamicIsland,
+            "classic-only mode should not include dynamic island"
+        )
+        expect(
+            !DisplaySurfaceMode.dynamicIslandOnly.includesClassicSurface,
+            "dynamic-island-only mode should not auto-show the original app surface"
+        )
+        expect(
+            DisplaySurfaceMode.dynamicIslandOnly.includesDynamicIsland,
+            "dynamic-island-only mode should include dynamic island"
+        )
+
+        defaults.set("future-mode", forKey: DisplaySurfaceMode.storageKey)
+        expect(
+            DisplaySurfaceMode.storedOrDefault(defaults: defaults) == .classicAndDynamicIsland,
+            "unknown display surface preference should fall back to classic + dynamic island"
+        )
+
+        if failures.isEmpty {
+            print("display surface self-test passed")
+            return true
+        }
+        failures.forEach { print("display surface self-test failed: \($0)") }
         return false
     }
 }
@@ -9734,12 +9879,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var lastRenderedStatusItemAppearanceName: NSAppearance.Name?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        applyActivationPolicyForVisibleSurfaces()
         settings.themeMode.applyAppearance()
         setupMainMenu()
         debugLog("app launched bundle=\(Bundle.main.bundlePath)")
 
-        createMainWindow()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            createMainWindow(show: true)
+        }
         activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
@@ -9747,7 +9894,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         ) { [weak self] _ in
             self?.updateTaskBoardPollingActivity()
         }
-        setupStatusItemIfNeeded()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            setupStatusItemIfNeeded()
+        }
         observeStatusItemUsage()
         observeSettings()
         settings.globalShortcutRegistration = { [weak self] shortcut in
@@ -9767,7 +9916,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
         store.updateVisibleRuntimeScopes(settings.visibleRuntimeScopes)
         store.start()
-        setupDynamicIsland()
+        if settings.displaySurfaceMode.includesDynamicIsland {
+            setupDynamicIsland()
+        }
         updateStore.startAutomaticCheck()
         if CommandLine.arguments.contains("--show-status-popover") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -9780,7 +9931,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
     }
 
-    private func createMainWindow() {
+    private func createMainWindow(show shouldShow: Bool) {
+        if window != nil {
+            if shouldShow {
+                showMainWindow()
+            }
+            return
+        }
+
         let width = UsageWidgetView.widgetWidth
         let height = UsageWidgetView.widgetDefaultHeight
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -9806,12 +9964,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         installTitlebarToolbar(on: mainWindow)
         window = mainWindow
         applyMainWindowLevel()
-        showMainWindow()
+        if shouldShow {
+            showMainWindow()
+        }
     }
 
     private func setupDynamicIsland() {
+        guard dynamicIslandController == nil else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard self.dynamicIslandController == nil else { return }
             let controller = DynamicIslandWindowController(
                 store: store,
                 settings: settings,
@@ -9831,6 +9993,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         Task { @MainActor in
             controller?.stop()
         }
+    }
+
+    private func applyDisplaySurfaceMode(_ mode: DisplaySurfaceMode) {
+        if mode.includesClassicSurface {
+            createMainWindow(show: window?.isVisible != true)
+            setupStatusItemIfNeeded()
+        } else {
+            closeStatusPopover()
+            removeStatusItem()
+            window?.orderOut(nil)
+        }
+
+        if mode.includesDynamicIsland {
+            setupDynamicIsland()
+        } else {
+            stopDynamicIsland()
+        }
+
+        applyActivationPolicyForVisibleSurfaces()
+        updateTaskBoardPollingActivity()
+    }
+
+    private func applyActivationPolicyForVisibleSurfaces() {
+        let shouldUseRegularPolicy = settings.displaySurfaceMode.includesClassicSurface
+            || window?.isVisible == true
+            || settingsWindow?.isVisible == true
+        NSApp.setActivationPolicy(shouldUseRegularPolicy ? .regular : .accessory)
     }
 
     private func installTitlebarToolbar(on window: NSWindow) {
@@ -9914,6 +10103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         return true
     }
 
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === settingsWindow else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.applyActivationPolicyForVisibleSurfaces()
+        }
+    }
+
     func windowDidMiniaturize(_ notification: Notification) {
         updateTaskBoardPollingActivity()
     }
@@ -9935,9 +10132,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     private func showMainWindow() {
+        if window == nil {
+            createMainWindow(show: false)
+        }
         guard let window else { return }
         NSApp.setActivationPolicy(.regular)
-        setupStatusItemIfNeeded()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            setupStatusItemIfNeeded()
+        }
         closeStatusPopover()
         applyMainWindowLevel()
         if window.isMiniaturized {
@@ -9951,7 +10153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private func hideMainWindowAfterClose() {
         closeStatusPopover()
         window?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        applyActivationPolicyForVisibleSurfaces()
         updateTaskBoardPollingActivity()
     }
 
@@ -10096,6 +10298,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateStatusItem()
+            }
+            .store(in: &cancellables)
+
+        settings.$displaySurfaceMode
+            .receive(on: RunLoop.main)
+            .sink { [weak self] mode in
+                self?.applyDisplaySurfaceMode(mode)
             }
             .store(in: &cancellables)
 
@@ -10290,6 +10499,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         updateStatusItem()
         button.target = self
         button.action = #selector(statusItemClicked)
+    }
+
+    private func removeStatusItem() {
+        closeStatusPopover()
+        guard let statusItem else { return }
+        statusItemAppearanceObservation = nil
+        NSStatusBar.system.removeStatusItem(statusItem)
+        self.statusItem = nil
+        lastRenderedStatusItemPresentation = nil
+        lastRenderedStatusItemAppearanceName = nil
     }
 
     private func setupStatusItemIfNeeded() {
@@ -10499,6 +10718,10 @@ struct codexUMain {
 
         if CommandLine.arguments.contains("--self-test-particle-animation") {
             exit(QuotaParticleAnimationSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-display-surface") {
+            exit(DisplaySurfaceModeSelfTest.run() ? 0 : 1)
         }
 
         if CommandLine.arguments.contains("--self-test-rate-limits") {

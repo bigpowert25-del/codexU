@@ -23,7 +23,7 @@ codexU is a macOS menu bar and desktop app for tracking Codex quota, separate Co
 
 v1.2.0 adds a local macOS Dynamic Island overlay and a lightweight Windows Dynamic Island experiment. The macOS overlay reuses codexU's existing data path for Codex quota, Codex / companion-Agent token accounting, task source labels, local CPU, memory, and temperature / thermal state. It does not introduce a second usage counter.
 
-The island supports a horizontal top capsule plus vertical left and right capsules. Normal left-click still expands or collapses the island. Holding the left and right mouse buttons together enables reposition dragging; releasing snaps the island to the nearest screen edge. Quota rendering follows the live Codex response: when only a 7-day window is available, codexU shows `7d` only and does not invent a missing 5-hour reset.
+The island supports a horizontal top capsule plus vertical left and right capsules. Normal left-click still expands or collapses the island. Holding the left and right mouse buttons together enables reposition dragging; releasing snaps the island to the nearest screen edge. Settings can show both the original dashboard/menu-bar surface and Dynamic Island, or choose either surface alone. Quota rendering follows the live Codex response: when only a 7-day window is available, codexU shows `7d` only and does not invent a missing 5-hour reset.
 
 ## v1.1.4 Profile-Matched Metrics
 
