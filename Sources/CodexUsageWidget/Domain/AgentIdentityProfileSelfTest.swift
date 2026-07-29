@@ -8,6 +8,9 @@ enum AgentIdentityProfileSelfTest {
         testSanitization(failures: &failures)
         testValidationLimits(failures: &failures)
         testCoding(failures: &failures)
+        testStorePersistence(failures: &failures)
+        testStoreFailureModes(failures: &failures)
+        testStoredPrivacyBoundary(failures: &failures)
 
         if failures.isEmpty {
             print("agent identity self-test passed")
@@ -123,5 +126,158 @@ enum AgentIdentityProfileSelfTest {
             failures.append("profile did not round-trip through Codable")
             return
         }
+    }
+
+    private static func testStorePersistence(failures: inout [String]) {
+        guard let temporary = makeTemporaryStore() else {
+            failures.append("could not create temporary profile directory")
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+        let fileURL = temporary.fileURL
+        let now = Date(timeIntervalSince1970: 5_000)
+        let missingStore = AgentIdentityProfileStore(fileURL: fileURL)
+        let missing = missingStore.profile(
+            nodeID: "nas-hermes",
+            runtime: .hermes,
+            now: now
+        )
+        if missing
+            != AgentIdentityProfile.defaultProfile(
+                nodeID: "nas-hermes",
+                runtime: .hermes,
+                now: now
+            ) {
+            failures.append("missing profile file did not use the runtime default")
+        }
+
+        guard let custom = AgentIdentityProfile.sanitized(
+            nodeID: "nas-hermes",
+            runtime: .hermes,
+            roleName: "Independent reviewer",
+            responsibility: "Review difficult results",
+            policyLevel: .collaborative,
+            updatedAt: now
+        ) else {
+            failures.append("could not create store test profile")
+            return
+        }
+        do {
+            try missingStore.save(custom)
+            let restoredStore = AgentIdentityProfileStore(fileURL: fileURL)
+            if restoredStore.profile(
+                nodeID: "nas-hermes",
+                runtime: .hermes,
+                now: now
+            ) != custom {
+                failures.append("saved profile did not survive store reload")
+            }
+            if restoredStore.profile(
+                nodeID: "nas-hermes",
+                runtime: .codex,
+                now: now
+            ).runtime != .codex {
+                failures.append("runtime mismatch reused an unsafe override")
+            }
+            try restoredStore.reset(nodeID: "nas-hermes")
+            let reset = AgentIdentityProfileStore(fileURL: fileURL).profile(
+                nodeID: "nas-hermes",
+                runtime: .hermes,
+                now: now
+            )
+            if reset.policyLevel != .guarded
+                || reset.roleName != "Analyze & review" {
+                failures.append("reset did not restore the runtime default")
+            }
+        } catch {
+            failures.append("store persistence failed: \(error)")
+        }
+    }
+
+    private static func testStoreFailureModes(failures: inout [String]) {
+        guard let temporary = makeTemporaryStore() else {
+            failures.append("could not create temporary profile directory")
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+        let documents = [
+            #"{"schema":"unsupported","profiles":[]}"#,
+            #"{"schema":"godexu-agent-profiles-v1","profiles":[{"nodeID":"same","runtime":"codex","roleName":"One","responsibility":"","policyLevel":"a","updatedAt":"1970-01-01T00:00:01Z"},{"nodeID":"same","runtime":"codex","roleName":"Two","responsibility":"","policyLevel":"a","updatedAt":"1970-01-01T00:00:02Z"}]}"#,
+            #"{"schema":"godexu-agent-profiles-v1","profiles":[{"nodeID":"bad node","runtime":"codex","roleName":"Builder","responsibility":"","policyLevel":"a","updatedAt":"1970-01-01T00:00:01Z"}]}"#,
+            #"{not-json}"#
+        ]
+        for document in documents {
+            do {
+                try Data(document.utf8).write(to: temporary.fileURL, options: .atomic)
+                if !AgentIdentityProfileStore(fileURL: temporary.fileURL).overrides.isEmpty {
+                    failures.append("invalid store document was partially trusted")
+                }
+            } catch {
+                failures.append("could not write invalid store fixture: \(error)")
+            }
+        }
+    }
+
+    private static func testStoredPrivacyBoundary(failures: inout [String]) {
+        guard let temporary = makeTemporaryStore() else {
+            failures.append("could not create temporary profile directory")
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+        let now = Date(timeIntervalSince1970: 6_000)
+        let store = AgentIdentityProfileStore(fileURL: temporary.fileURL)
+        guard let profile = AgentIdentityProfile.sanitized(
+            nodeID: "nas-openclaw",
+            runtime: .openClaw,
+            roleName: "Coordinator",
+            responsibility: "Coordinate safe handoffs",
+            policyLevel: .flexible,
+            updatedAt: now
+        ) else {
+            failures.append("could not create privacy fixture")
+            return
+        }
+        do {
+            try store.save(profile)
+            let text = String(
+                data: try Data(contentsOf: temporary.fileURL),
+                encoding: .utf8
+            ) ?? ""
+            let forbidden = [
+                "sshHost",
+                "networkHost",
+                "probeProfile",
+                "command",
+                "stdout",
+                "stderr",
+                "credential",
+                "keyPath"
+            ]
+            if forbidden.contains(where: text.contains) {
+                failures.append("profile store crossed the node privacy boundary")
+            }
+        } catch {
+            failures.append("could not verify stored privacy boundary: \(error)")
+        }
+    }
+
+    private static func makeTemporaryStore() -> (directory: URL, fileURL: URL)? {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "codexu-agent-profile-self-test-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            return nil
+        }
+        return (
+            directory,
+            directory.appendingPathComponent("agent-profiles.json")
+        )
     }
 }
