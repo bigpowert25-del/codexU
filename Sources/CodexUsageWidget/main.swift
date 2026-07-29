@@ -3503,6 +3503,7 @@ struct UsageWidgetView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var updateStore: AppUpdateStore
     @StateObject private var systemMonitor = LocalSystemMonitor()
+    @StateObject private var nodeStore = AgentNodeStore()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -3540,11 +3541,16 @@ struct UsageWidgetView: View {
         .onAppear {
             themeMode.applyAppearance()
             systemMonitor.start()
+            nodeStore.start(codexRuntime: store.runtimeSnapshot(for: .codex))
             store.setTaskBoardSelected(selectedDashboardTab == .tasks)
         }
         .onDisappear {
             systemMonitor.stop()
+            nodeStore.stop()
             store.setTaskBoardSelected(false)
+        }
+        .onChange(of: store.runtimeSnapshots) { _, _ in
+            nodeStore.updateLocalCodex(store.runtimeSnapshot(for: .codex))
         }
         .onChange(of: selectedDashboardTab) { _, tab in
             store.setTaskBoardSelected(tab == .tasks)
@@ -3585,6 +3591,7 @@ struct UsageWidgetView: View {
                     }
                     usageOverviewSection
                     LocalSystemStatusStrip(snapshot: systemMonitor.snapshot, language: language)
+                    AgentNodeStatusSection(snapshots: nodeStore.snapshots, language: language)
                     dashboardTabsSection
                 }
                 .padding(.bottom, 2)

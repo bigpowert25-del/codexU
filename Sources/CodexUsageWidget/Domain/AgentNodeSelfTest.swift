@@ -11,6 +11,8 @@ enum AgentNodeSelfTest {
         testNodeReader(failures: &failures)
         testLocalCodexStateMapping(failures: &failures)
         testNodeJSON(failures: &failures)
+        testNodePresentation(failures: &failures)
+        testNodeRefreshGate(failures: &failures)
 
         if failures.isEmpty {
             print("agent node self-test passed")
@@ -576,6 +578,101 @@ enum AgentNodeSelfTest {
             .flatMap { String(data: $0, encoding: .utf8) } ?? ""
         if serialized.contains("private-ssh-alias") {
             failures.append("agent node JSON leaked the SSH alias")
+        }
+    }
+
+    private static func testNodePresentation(failures: inout [String]) {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let descriptor = AgentNodeDescriptor(
+            id: "nas-hermes",
+            displayName: "Hermes on the very long NAS node name",
+            deviceName: "Ginger NAS",
+            runtime: .hermes,
+            location: .remote,
+            sshHost: "private-ssh-alias",
+            probeProfile: .synologyTrimHermesV1
+        )
+        let expected: [(AgentNodeHealth, String, String)] = [
+            (.available, "可用", "checkmark.circle.fill"),
+            (.degraded, "需关注", "exclamationmark.triangle.fill"),
+            (.offline, "已离线", "stop.circle.fill"),
+            (.unreachable, "无法连接", "wifi.slash"),
+            (.stale, "缓存状态", "clock.arrow.circlepath")
+        ]
+        for (health, statusText, symbol) in expected {
+            let snapshot = AgentNodeSnapshot(
+                descriptor: descriptor,
+                health: health,
+                checkedAt: now,
+                lastSeenAt: now.addingTimeInterval(-120),
+                heartbeatAt: nil,
+                processCount: 1,
+                sourceLabel: "SSH · Ginger",
+                detailCode: "safe-detail",
+                isFromCache: health == .stale
+            )
+            let presentation = AgentNodePresentation.make(
+                snapshot,
+                language: .zh,
+                now: now
+            )
+            if presentation.statusText != statusText
+                || presentation.systemName != symbol {
+                failures.append("node health \(health) lacks stable text and symbol")
+            }
+            if presentation.capabilityText != "3 项能力"
+                || !presentation.lastSeenText.contains("2 分钟前") {
+                failures.append("node presentation omitted capability or relative-time text")
+            }
+            let visible = [
+                presentation.title,
+                presentation.subtitle,
+                presentation.statusText,
+                presentation.lastSeenText,
+                presentation.capabilityText,
+                presentation.accessibilityText
+            ].joined(separator: " ")
+            let forbidden = [
+                "private-ssh-alias",
+                "/vol1/",
+                "ps -eo",
+                "stdout",
+                "stderr"
+            ]
+            for value in forbidden where visible.contains(value) {
+                failures.append("node presentation leaked \(value)")
+            }
+        }
+    }
+
+    private static func testNodeRefreshGate(failures: inout [String]) {
+        if AgentNodePollingPolicy.interval != 120
+            || AgentNodePollingPolicy.tolerance != 24 {
+            failures.append("node polling policy is not the bounded foreground cadence")
+        }
+
+        var gate = AgentNodeRefreshGate()
+        if !gate.request(queueIfBusy: false) {
+            failures.append("first node refresh request did not start")
+        }
+        if gate.request(queueIfBusy: false) {
+            failures.append("overlapping node refresh was allowed")
+        }
+        if gate.complete() {
+            failures.append("unqueued node refresh completion requested another run")
+        }
+
+        if !gate.request(queueIfBusy: false) {
+            failures.append("node refresh gate did not reopen after completion")
+        }
+        if gate.request(queueIfBusy: true) {
+            failures.append("busy node refresh started a second run")
+        }
+        if !gate.complete() {
+            failures.append("queued node refresh was not coalesced into one follow-up")
+        }
+        if gate.complete() {
+            failures.append("node refresh queue produced more than one follow-up")
         }
     }
 }
