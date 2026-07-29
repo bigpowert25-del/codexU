@@ -1,4 +1,6 @@
 import Foundation
+import Darwin
+import Network
 
 protocol AgentNodeCommandExecuting {
     func run(
@@ -15,10 +17,78 @@ struct AgentNodeCommandResult: Equatable {
     let timedOut: Bool
 }
 
+enum AgentNodeLocalNetworkPreflightResult: Equatable {
+    case ready
+    case denied
+    case unavailable
+}
+
+protocol AgentNodeLocalNetworkPreflighting {
+    func check(
+        host: String,
+        port: UInt16,
+        timeout: TimeInterval
+    ) -> AgentNodeLocalNetworkPreflightResult
+}
+
+struct SystemAgentNodeLocalNetworkPreflight: AgentNodeLocalNetworkPreflighting {
+    func check(
+        host: String,
+        port: UInt16,
+        timeout: TimeInterval
+    ) -> AgentNodeLocalNetworkPreflightResult {
+        guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
+            return .unavailable
+        }
+
+        let connection = NWConnection(
+            host: NWEndpoint.Host(host),
+            port: endpointPort,
+            using: .tcp
+        )
+        let completion = DispatchSemaphore(value: 0)
+        let queue = DispatchQueue(label: "codexu.agent-node.local-network")
+        var result = AgentNodeLocalNetworkPreflightResult.unavailable
+        var completed = false
+
+        connection.stateUpdateHandler = { state in
+            guard !completed else { return }
+            switch state {
+            case .ready:
+                completed = true
+                result = .ready
+                completion.signal()
+            case .waiting:
+                if #available(macOS 15.0, *),
+                   connection.currentPath?.unsatisfiedReason == .localNetworkDenied {
+                    completed = true
+                    result = .denied
+                    completion.signal()
+                }
+            case .failed:
+                completed = true
+                result = .unavailable
+                completion.signal()
+            default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+        _ = completion.wait(timeout: .now() + timeout)
+        connection.cancel()
+        return result
+    }
+}
+
 enum AgentNodeProbeError: Error, Equatable {
     case timeout
     case authentication
     case hostKey
+    case localNetworkDenied
+    case connectionClosed
+    case nameResolution
+    case processLaunch
+    case transportNoDetail
     case transport
     case protocolError
 }
@@ -32,13 +102,11 @@ struct SystemAgentNodeCommandExecutor: AgentNodeCommandExecuting {
         let process = Process()
         let standardOutput = Pipe()
         let standardError = Pipe()
-        let completion = DispatchSemaphore(value: 0)
 
         process.executableURL = executableURL
         process.arguments = arguments
         process.standardOutput = standardOutput
         process.standardError = standardError
-        process.terminationHandler = { _ in completion.signal() }
 
         do {
             try process.run()
@@ -51,17 +119,36 @@ struct SystemAgentNodeCommandExecutor: AgentNodeCommandExecuting {
             )
         }
 
-        let finished = completion.wait(timeout: .now() + timeout) == .success
-        if !finished {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        let timedOut = process.isRunning
+        if timedOut {
             process.terminate()
-            _ = completion.wait(timeout: .now() + 1)
+            let terminationDeadline = Date().addingTimeInterval(1)
+            while process.isRunning && Date() < terminationDeadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+                let killDeadline = Date().addingTimeInterval(0.5)
+                while process.isRunning && Date() < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.02)
+                }
+            }
         }
 
+        let stopped = !process.isRunning
         return AgentNodeCommandResult(
-            exitCode: finished ? process.terminationStatus : 255,
-            standardOutput: standardOutput.fileHandleForReading.readDataToEndOfFile(),
-            standardError: standardError.fileHandleForReading.readDataToEndOfFile(),
-            timedOut: !finished
+            exitCode: timedOut || !stopped ? 255 : process.terminationStatus,
+            standardOutput: stopped
+                ? standardOutput.fileHandleForReading.readDataToEndOfFile()
+                : Data(),
+            standardError: stopped
+                ? standardError.fileHandleForReading.readDataToEndOfFile()
+                : Data(),
+            timedOut: timedOut
         )
     }
 }
@@ -79,9 +166,15 @@ struct AgentNodeProbe {
     ]
 
     private let executor: any AgentNodeCommandExecuting
+    private let localNetworkPreflight: any AgentNodeLocalNetworkPreflighting
 
-    init(executor: any AgentNodeCommandExecuting = SystemAgentNodeCommandExecutor()) {
+    init(
+        executor: any AgentNodeCommandExecuting = SystemAgentNodeCommandExecutor(),
+        localNetworkPreflight: any AgentNodeLocalNetworkPreflighting =
+            SystemAgentNodeLocalNetworkPreflight()
+    ) {
         self.executor = executor
+        self.localNetworkPreflight = localNetworkPreflight
     }
 
     func probe(
@@ -93,6 +186,15 @@ struct AgentNodeProbe {
               let profile = descriptor.probeProfile
         else {
             return .failure(.protocolError)
+        }
+
+        if let networkHost = descriptor.networkHost,
+           localNetworkPreflight.check(
+               host: networkHost,
+               port: 22,
+               timeout: Self.timeout
+           ) == .denied {
+            return .failure(.localNetworkDenied)
         }
 
         let arguments = [
@@ -118,7 +220,7 @@ struct AgentNodeProbe {
             return .failure(.timeout)
         }
         guard result.exitCode == 0 else {
-            return .failure(classifyFailure(result.standardError))
+            return .failure(classifyFailure(result))
         }
         return parse(result.standardOutput, descriptor: descriptor)
     }
@@ -176,8 +278,14 @@ struct AgentNodeProbe {
         )
     }
 
-    private func classifyFailure(_ standardError: Data) -> AgentNodeProbeError {
-        guard let text = String(data: standardError, encoding: .utf8)?.lowercased() else {
+    private func classifyFailure(_ result: AgentNodeCommandResult) -> AgentNodeProbeError {
+        if result.exitCode == 127 {
+            return .processLaunch
+        }
+        guard !result.standardError.isEmpty else {
+            return .transportNoDetail
+        }
+        guard let text = String(data: result.standardError, encoding: .utf8)?.lowercased() else {
             return .transport
         }
         if text.contains("permission denied")
@@ -188,6 +296,15 @@ struct AgentNodeProbe {
         if text.contains("host key verification failed")
             || text.contains("remote host identification has changed") {
             return .hostKey
+        }
+        if text.contains("operation not permitted") {
+            return .localNetworkDenied
+        }
+        if text.contains("could not resolve hostname") {
+            return .nameResolution
+        }
+        if text.contains("connection closed") {
+            return .connectionClosed
         }
         return .transport
     }

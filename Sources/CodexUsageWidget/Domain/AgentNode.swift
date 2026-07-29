@@ -26,6 +26,27 @@ struct AgentNodeDescriptor: Identifiable, Codable, Equatable {
     let location: AgentNodeLocation
     let sshHost: String?
     let probeProfile: AgentNodeProbeProfile?
+    let networkHost: String?
+
+    init(
+        id: String,
+        displayName: String,
+        deviceName: String,
+        runtime: RuntimeScope,
+        location: AgentNodeLocation,
+        sshHost: String?,
+        probeProfile: AgentNodeProbeProfile?,
+        networkHost: String? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.deviceName = deviceName
+        self.runtime = runtime
+        self.location = location
+        self.sshHost = sshHost
+        self.probeProfile = probeProfile
+        self.networkHost = networkHost
+    }
 
     var capabilities: [String] {
         switch runtime {

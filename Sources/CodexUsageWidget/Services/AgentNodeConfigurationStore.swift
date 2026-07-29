@@ -23,11 +23,12 @@ struct AgentNodeConfigurationStore {
         let deviceName: String
         let runtime: String
         let sshHost: String
+        let networkHost: String?
         let probeProfile: String
     }
 
     private static let documentKeys: Set<String> = ["schema", "nodes"]
-    private static let nodeKeys: Set<String> = [
+    private static let requiredNodeKeys: Set<String> = [
         "id",
         "displayName",
         "deviceName",
@@ -35,6 +36,7 @@ struct AgentNodeConfigurationStore {
         "sshHost",
         "probeProfile"
     ]
+    private static let allowedNodeKeys = requiredNodeKeys.union(["networkHost"])
 
     let configurationURL: URL
 
@@ -69,6 +71,7 @@ struct AgentNodeConfigurationStore {
         return try document.nodes.map { node in
             guard isSafeIdentifier(node.id),
                   isSafeIdentifier(node.sshHost),
+                  node.networkHost.map(isSafeNetworkHost) ?? true,
                   !node.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !node.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
@@ -94,7 +97,8 @@ struct AgentNodeConfigurationStore {
                 runtime: runtime,
                 location: .remote,
                 sshHost: node.sshHost,
-                probeProfile: profile
+                probeProfile: profile,
+                networkHost: node.networkHost
             )
         }
     }
@@ -110,7 +114,9 @@ struct AgentNodeConfigurationStore {
         }
 
         for node in nodes {
-            guard Set(node.keys) == nodeKeys,
+            let keys = Set(node.keys)
+            guard requiredNodeKeys.isSubset(of: keys),
+                  keys.isSubset(of: allowedNodeKeys),
                   node.values.allSatisfy({ $0 is String })
             else {
                 throw AgentNodeConfigurationError.invalidDocument
@@ -121,6 +127,13 @@ struct AgentNodeConfigurationStore {
     private static func isSafeIdentifier(_ value: String) -> Bool {
         value.range(
             of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func isSafeNetworkHost(_ value: String) -> Bool {
+        value.range(
+            of: #"^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$"#,
             options: .regularExpression
         ) != nil
     }

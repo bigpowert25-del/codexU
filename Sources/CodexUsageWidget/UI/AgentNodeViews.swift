@@ -144,7 +144,7 @@ struct AgentNodePresentation: Identifiable, Equatable {
             )
         case .unreachable:
             status = (
-                language.text("无法连接", "Unreachable"),
+                unreachableStatusText(snapshot.detailCode, language: language),
                 "wifi.slash",
                 .danger
             )
@@ -361,6 +361,16 @@ private func cachedStatusText(
         return language.text("缓存 · 需要授权", "Cached · authorization needed")
     case "live-probe-host-key":
         return language.text("缓存 · 主机验证", "Cached · verify host")
+    case "live-probe-local-network":
+        return language.text("缓存 · 允许局域网", "Cached · allow local network")
+    case "live-probe-connection-closed":
+        return language.text("缓存 · 连接被关闭", "Cached · connection closed")
+    case "live-probe-name-resolution":
+        return language.text("缓存 · 节点地址无效", "Cached · invalid node address")
+    case "live-probe-process-launch":
+        return language.text("缓存 · SSH 无法启动", "Cached · SSH could not start")
+    case "live-probe-transport-no-detail":
+        return language.text("缓存 · SSH 未响应", "Cached · SSH did not respond")
     case "live-probe-transport":
         return language.text("缓存 · 连接失败", "Cached · connection failed")
     case "live-probe-protocol":
@@ -368,4 +378,26 @@ private func cachedStatusText(
     default:
         return language.text("缓存状态", "Cached state")
     }
+}
+
+private func unreachableStatusText(
+    _ detailCode: String,
+    language: WidgetLanguage
+) -> String {
+    if detailCode == "probe-local-network" {
+        return language.text("允许局域网", "Allow local network")
+    }
+    if detailCode == "probe-name-resolution" {
+        return language.text("节点地址无效", "Invalid node address")
+    }
+    if detailCode == "probe-connection-closed" {
+        return language.text("连接被关闭", "Connection closed")
+    }
+    if detailCode == "probe-process-launch" {
+        return language.text("SSH 无法启动", "SSH could not start")
+    }
+    if detailCode == "probe-transport-no-detail" {
+        return language.text("SSH 未响应", "SSH did not respond")
+    }
+    return language.text("无法连接", "Unreachable")
 }

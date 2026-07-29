@@ -148,6 +148,16 @@ struct AgentNodeReader {
             detailCode = "probe-authentication"
         case .hostKey:
             detailCode = "probe-host-key"
+        case .localNetworkDenied:
+            detailCode = "probe-local-network"
+        case .connectionClosed:
+            detailCode = "probe-connection-closed"
+        case .nameResolution:
+            detailCode = "probe-name-resolution"
+        case .processLaunch:
+            detailCode = "probe-process-launch"
+        case .transportNoDetail:
+            detailCode = "probe-transport-no-detail"
         case .transport:
             detailCode = "probe-transport"
         case .protocolError:
@@ -193,6 +203,16 @@ private extension AgentNodeProbeError {
             return "authentication"
         case .hostKey:
             return "host-key"
+        case .localNetworkDenied:
+            return "local-network"
+        case .connectionClosed:
+            return "connection-closed"
+        case .nameResolution:
+            return "name-resolution"
+        case .processLaunch:
+            return "process-launch"
+        case .transportNoDetail:
+            return "transport-no-detail"
         case .transport:
             return "transport"
         case .protocolError:

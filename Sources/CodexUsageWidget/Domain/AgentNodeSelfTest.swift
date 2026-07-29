@@ -7,6 +7,7 @@ enum AgentNodeSelfTest {
         testConfiguration(failures: &failures)
         testCacheFallback(failures: &failures)
         testSSHProbe(failures: &failures)
+        testLocalNetworkPreflight(failures: &failures)
         testSSHProbeFailures(failures: &failures)
         testNodeReader(failures: &failures)
         testLocalCodexStateMapping(failures: &failures)
@@ -78,6 +79,7 @@ enum AgentNodeSelfTest {
               "deviceName": "NAS",
               "runtime": "openclaw",
               "sshHost": "spicy-nas-root0",
+              "networkHost": "192.168.110.49",
               "probeProfile": "synology-trim-openclaw-v1"
             },
             {
@@ -99,6 +101,10 @@ enum AgentNodeSelfTest {
             }
             if descriptors.map(\.runtime) != [.openClaw, .hermes] {
                 failures.append("configuration did not map stored runtime identifiers")
+            }
+            if descriptors.first?.networkHost != "192.168.110.49"
+                || descriptors.last?.networkHost != nil {
+                failures.append("configuration did not preserve optional preflight host")
             }
         } catch {
             failures.append("valid configuration failed to decode")
@@ -148,6 +154,14 @@ enum AgentNodeSelfTest {
         )
         if (try? AgentNodeConfigurationStore.decode(Data(commandField.utf8))) != nil {
             failures.append("configuration accepted an arbitrary command field")
+        }
+
+        let unsafeNetworkHost = json.replacingOccurrences(
+            of: "192.168.110.49",
+            with: "192.168.110.49;open /tmp"
+        )
+        if (try? AgentNodeConfigurationStore.decode(Data(unsafeNetworkHost.utf8))) != nil {
+            failures.append("configuration accepted an unsafe preflight host")
         }
     }
 
@@ -388,7 +402,47 @@ enum AgentNodeSelfTest {
                     standardError: Data("connection closed".utf8),
                     timedOut: false
                 ),
-                .transport
+                .connectionClosed
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data(
+                        "ssh: connect to host 192.168.1.2 port 22: Operation not permitted".utf8
+                    ),
+                    timedOut: false
+                ),
+                .localNetworkDenied
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data(
+                        "ssh: Could not resolve hostname nas-alias: nodename nor servname provided".utf8
+                    ),
+                    timedOut: false
+                ),
+                .nameResolution
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 127,
+                    standardOutput: Data(),
+                    standardError: Data(),
+                    timedOut: false
+                ),
+                .processLaunch
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data(),
+                    timedOut: false
+                ),
+                .transportNoDetail
             )
         ]
         for (result, expected) in failuresByResult {
@@ -398,6 +452,37 @@ enum AgentNodeSelfTest {
             if probe.probe(descriptor) != .failure(expected) {
                 failures.append("SSH failure was not reduced to \(expected)")
             }
+        }
+    }
+
+    private static func testLocalNetworkPreflight(failures: inout [String]) {
+        let executor = RecordingAgentNodeCommandExecutor(
+            result: AgentNodeCommandResult(
+                exitCode: 0,
+                standardOutput: Data(),
+                standardError: Data(),
+                timedOut: false
+            )
+        )
+        let descriptor = AgentNodeDescriptor(
+            id: "nas-openclaw",
+            displayName: "OpenClaw",
+            deviceName: "NAS",
+            runtime: .openClaw,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimOpenClawV1,
+            networkHost: "192.168.110.49"
+        )
+        let probe = AgentNodeProbe(
+            executor: executor,
+            localNetworkPreflight: StubAgentNodeLocalNetworkPreflight(result: .denied)
+        )
+        if probe.probe(descriptor) != .failure(.localNetworkDenied) {
+            failures.append("local network denial did not stop the SSH probe")
+        }
+        if executor.executableURL != nil {
+            failures.append("SSH launched before local network permission was available")
         }
     }
 
@@ -707,6 +792,15 @@ private final class RecordingAgentNodeCommandExecutor: AgentNodeCommandExecuting
         self.arguments = arguments
         self.timeout = timeout
         return result
+    }
+}
+
+private struct StubAgentNodeLocalNetworkPreflight: AgentNodeLocalNetworkPreflighting {
+    let result: AgentNodeLocalNetworkPreflightResult
+
+    func check(host: String, port: UInt16, timeout: TimeInterval)
+        -> AgentNodeLocalNetworkPreflightResult {
+        result
     }
 }
 

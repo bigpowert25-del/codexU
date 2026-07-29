@@ -40,6 +40,7 @@ build:
 		-o "$(MACOS_DIR)/$(APP_NAME)" \
 		-framework Cocoa \
 		-framework Carbon \
+		-framework Network \
 		-framework SwiftUI
 	codesign $(CODESIGN_FLAGS) "$(APP_DIR)"
 	codesign --verify --deep --strict "$(APP_DIR)"
