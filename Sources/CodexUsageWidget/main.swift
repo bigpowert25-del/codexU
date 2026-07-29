@@ -10748,6 +10748,10 @@ struct codexUMain {
             exit(AgentSelectionSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-agent-nodes") {
+            exit(AgentNodeSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-codex-token-events") {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
         }
