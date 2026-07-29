@@ -466,8 +466,19 @@ enum AgentNodeSelfTest {
             failures.append("node reader did not isolate live and cached outcomes")
         }
         if snapshots.last?.isFromCache != true
-            || snapshots.last?.lastSeenAt != cachedHermes.lastSeenAt {
+            || snapshots.last?.lastSeenAt != cachedHermes.lastSeenAt
+            || snapshots.last?.detailCode != "live-probe-transport" {
             failures.append("node reader did not preserve cached last-seen state")
+        }
+        if let cachedSnapshot = snapshots.last {
+            let presentation = AgentNodePresentation.make(
+                cachedSnapshot,
+                language: .zh,
+                now: now
+            )
+            if presentation.statusText != "缓存 · 连接失败" {
+                failures.append("cached node did not explain the live probe failure")
+            }
         }
         if cache.savedSnapshots.first?.id != "local-codex"
             || !cache.savedSnapshots.contains(where: { $0.id == "nas-openclaw" })

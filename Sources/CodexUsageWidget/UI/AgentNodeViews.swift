@@ -150,7 +150,7 @@ struct AgentNodePresentation: Identifiable, Equatable {
             )
         case .stale:
             status = (
-                language.text("缓存状态", "Cached state"),
+                cachedStatusText(snapshot.detailCode, language: language),
                 "clock.arrow.circlepath",
                 .info
             )
@@ -348,4 +348,24 @@ private func relativeNodeTime(
     }
     let days = max(1, Int(interval / (24 * 60 * 60)))
     return language.text("\(days) 天前", "\(days)d ago")
+}
+
+private func cachedStatusText(
+    _ detailCode: String,
+    language: WidgetLanguage
+) -> String {
+    switch detailCode {
+    case "live-probe-timeout":
+        return language.text("缓存 · 连接超时", "Cached · timed out")
+    case "live-probe-authentication":
+        return language.text("缓存 · 需要授权", "Cached · authorization needed")
+    case "live-probe-host-key":
+        return language.text("缓存 · 主机验证", "Cached · verify host")
+    case "live-probe-transport":
+        return language.text("缓存 · 连接失败", "Cached · connection failed")
+    case "live-probe-protocol":
+        return language.text("缓存 · 数据异常", "Cached · invalid response")
+    default:
+        return language.text("缓存状态", "Cached state")
+    }
 }

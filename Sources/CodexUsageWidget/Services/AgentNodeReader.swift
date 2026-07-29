@@ -66,7 +66,9 @@ struct AgentNodeReader {
                     from: cachedSnapshots,
                     now: now
                 ) {
-                    displayedSnapshots.append(stale)
+                    displayedSnapshots.append(
+                        staleSnapshot(stale, failure: error)
+                    )
                 } else {
                     displayedSnapshots.append(
                         makeUnreachableSnapshot(
@@ -162,5 +164,39 @@ struct AgentNodeReader {
             detailCode: detailCode,
             isFromCache: false
         )
+    }
+
+    private func staleSnapshot(
+        _ snapshot: AgentNodeSnapshot,
+        failure: AgentNodeProbeError
+    ) -> AgentNodeSnapshot {
+        AgentNodeSnapshot(
+            descriptor: snapshot.descriptor,
+            health: snapshot.health,
+            checkedAt: snapshot.checkedAt,
+            lastSeenAt: snapshot.lastSeenAt,
+            heartbeatAt: snapshot.heartbeatAt,
+            processCount: snapshot.processCount,
+            sourceLabel: snapshot.sourceLabel,
+            detailCode: "live-probe-\(failure.safeCode)",
+            isFromCache: snapshot.isFromCache
+        )
+    }
+}
+
+private extension AgentNodeProbeError {
+    var safeCode: String {
+        switch self {
+        case .timeout:
+            return "timeout"
+        case .authentication:
+            return "authentication"
+        case .hostKey:
+            return "host-key"
+        case .transport:
+            return "transport"
+        case .protocolError:
+            return "protocol"
+        }
     }
 }
