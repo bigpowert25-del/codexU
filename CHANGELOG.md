@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added local Agent identity profiles for Codex, OpenClaw, Claude Code, and Hermes, with editable role names and responsibility summaries from the existing node cards.
+- Added explicit A / B / C policy levels: guarded observation, collaborative draft preparation, and a reserved flexible tier that grants no additional permissions yet.
+- Stored Agent identity overrides in a strict local-only schema that is excluded from public node diagnostics; reset and cancel paths preserve safe defaults.
 - Added opt-in, read-only Agent node cards for local Codex and explicitly configured NAS OpenClaw / Hermes instances.
 - Added strict node configuration validation, fixed probe profiles, local-network permission diagnostics, and a 24-hour last-known cache that is never presented as live health.
 - Kept users without a NAS on the original local-only path and excluded SSH hosts, network addresses, commands, process output, and credentials from public diagnostics.
