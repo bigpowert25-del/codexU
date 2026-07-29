@@ -9,9 +9,9 @@ enum DynamicIslandMode: Equatable {
         if dock.isVertical {
             switch self {
             case .compact:
-                return CGSize(width: 54, height: 226)
+                return CGSize(width: 54, height: 142)
             case .peek:
-                return CGSize(width: 92, height: 438)
+                return CGSize(width: 92, height: 270)
             case .expanded:
                 return CGSize(width: 300, height: 620)
             }
@@ -167,7 +167,6 @@ struct DynamicIslandView: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Spacer(minLength: 0)
             statusDot
         }
         .padding(.vertical, 12)
@@ -199,7 +198,6 @@ struct DynamicIslandView: View {
             ForEach(presentation.systemMetrics, id: \.id) { metric in
                 verticalMetricPill(metric)
             }
-            Spacer(minLength: 0)
             statusDot
         }
         .padding(.horizontal, 10)

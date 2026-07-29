@@ -103,6 +103,7 @@ enum DynamicIslandPresentationSelfTest {
         failures.append(contentsOf: runQuotaTopologyTest(now: now, sevenDay: codexSnapshot.snapshot.sevenDayQuota))
         failures.append(contentsOf: runInteractionStabilityTest())
         failures.append(contentsOf: runDockingTest())
+        failures.append(contentsOf: runSideLayoutContentFitTest())
 
         if failures.isEmpty {
             print("dynamic island presentation self-test passed")
@@ -273,6 +274,31 @@ enum DynamicIslandPresentationSelfTest {
         _ = comboGate.apply(.leftUp)
         if comboGate.isReady {
             failures.append("releasing either button should end reposition dragging")
+        }
+
+        return failures
+    }
+
+    private static func runSideLayoutContentFitTest() -> [String] {
+        var failures: [String] = []
+        let expectedCompactSize = CGSize(width: 54, height: 142)
+        let expectedPeekSize = CGSize(width: 92, height: 270)
+
+        let rightCompactSize = DynamicIslandMode.compact.size(for: .right)
+        if rightCompactSize != expectedCompactSize {
+            failures.append("side compact island should fit its content without surplus vertical space")
+        }
+
+        let rightPeekSize = DynamicIslandMode.peek.size(for: .right)
+        if rightPeekSize != expectedPeekSize {
+            failures.append("side peek island should fit its content without surplus vertical space")
+        }
+
+        if DynamicIslandMode.compact.size(for: .left) != rightCompactSize {
+            failures.append("left and right compact islands should use symmetric sizes")
+        }
+        if DynamicIslandMode.peek.size(for: .left) != rightPeekSize {
+            failures.append("left and right peek islands should use symmetric sizes")
         }
 
         return failures
