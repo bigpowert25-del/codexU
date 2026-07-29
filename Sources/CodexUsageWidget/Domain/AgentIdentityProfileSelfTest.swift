@@ -11,6 +11,7 @@ enum AgentIdentityProfileSelfTest {
         testStorePersistence(failures: &failures)
         testStoreFailureModes(failures: &failures)
         testStoredPrivacyBoundary(failures: &failures)
+        testPresentation(failures: &failures)
 
         if failures.isEmpty {
             print("agent identity self-test passed")
@@ -258,6 +259,53 @@ enum AgentIdentityProfileSelfTest {
             }
         } catch {
             failures.append("could not verify stored privacy boundary: \(error)")
+        }
+    }
+
+    private static func testPresentation(failures: inout [String]) {
+        let defaultProfile = AgentIdentityProfile.defaultProfile(
+            nodeID: "local-codex",
+            runtime: .codex,
+            now: Date(timeIntervalSince1970: 7_000)
+        )
+        let chinese = AgentIdentityPresentation.make(
+            profile: defaultProfile,
+            language: .zh
+        )
+        if chinese.roleName != "开发执行"
+            || chinese.responsibility != "研究、实现、验证与交付成果"
+            || chinese.policyCode != "A"
+            || chinese.policyName != "保守"
+            || !chinese.policyDescription.contains("观察")
+            || !chinese.safetyNotice.contains("不会授权") {
+            failures.append("Chinese default identity presentation was incomplete")
+        }
+
+        guard let customProfile = AgentIdentityProfile.sanitized(
+            nodeID: "nas-hermes",
+            runtime: .hermes,
+            roleName: "Critical reviewer",
+            responsibility: "Challenge weak evidence",
+            policyLevel: .flexible,
+            updatedAt: Date(timeIntervalSince1970: 8_000)
+        ) else {
+            failures.append("could not create presentation fixture")
+            return
+        }
+        let english = AgentIdentityPresentation.make(
+            profile: customProfile,
+            language: .en
+        )
+        if english.roleName != "Critical reviewer"
+            || english.responsibility != "Challenge weak evidence"
+            || english.policyCode != "C"
+            || english.policyName != "Flexible"
+            || !english.safetyNotice.contains("does not grant") {
+            failures.append("custom identity presentation changed user-authored content")
+        }
+        if english.accessibilityText.contains("/")
+            || english.accessibilityText.count > 320 {
+            failures.append("identity accessibility text was unsafe or unbounded")
         }
     }
 

@@ -3504,6 +3504,7 @@ struct UsageWidgetView: View {
     @ObservedObject var updateStore: AppUpdateStore
     @StateObject private var systemMonitor = LocalSystemMonitor()
     @StateObject private var nodeStore = AgentNodeStore()
+    @StateObject private var identityStore = AgentIdentityProfileStore()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -3591,7 +3592,11 @@ struct UsageWidgetView: View {
                     }
                     usageOverviewSection
                     LocalSystemStatusStrip(snapshot: systemMonitor.snapshot, language: language)
-                    AgentNodeStatusSection(snapshots: nodeStore.snapshots, language: language)
+                    AgentNodeStatusSection(
+                        profileStore: identityStore,
+                        snapshots: nodeStore.snapshots,
+                        language: language
+                    )
                     dashboardTabsSection
                 }
                 .padding(.bottom, 2)
