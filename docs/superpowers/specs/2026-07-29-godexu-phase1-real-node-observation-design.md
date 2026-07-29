@@ -291,3 +291,25 @@ sources:
 - First implementation step: add a failing self-test that describes configuration validation and health-state evaluation.
 - What not to touch: NAS files/services, token accounting, task attribution, update channel, app version, Windows prototype, existing menu bar and Dynamic Island layouts.
 - When to ask again: before any NAS write, credential or host-key change, package restart, task delivery, repair action, GitHub push, merge, version bump, or release.
+
+## 13. macOS local-network privacy addendum
+
+Real UI acceptance found a platform distinction that is not visible from a
+Terminal-only test:
+
+- macOS exempts Terminal-launched command-line tools from local-network
+  privacy, but treats an SSH child launched by a GUI app as the app's network
+  access;
+- each remote node may therefore provide an optional, validated
+  `networkHost` used only for a native TCP preflight to port 22;
+- `networkHost`, the SSH alias, commands, stdout, stderr, paths, and credentials
+  remain absent from public node snapshot JSON and visible cards;
+- denied local-network access must render as a cached or unreachable state with
+  a local `允许局域网 / Allow local network` explanation;
+- `NSLocalNetworkUsageDescription` is required in the app bundle;
+- a Developer ID or other Apple-issued signing identity is a release gate for
+  reliable macOS local-network permission tracking. An ad-hoc build may remain
+  correctly degraded even when the same probe succeeds from Terminal.
+
+This addendum does not authorize a certificate change, notarization, NAS write,
+or system-wide network exception.
