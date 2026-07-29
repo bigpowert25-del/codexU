@@ -6,6 +6,8 @@ enum AgentNodeSelfTest {
         testHealthEvaluation(failures: &failures)
         testConfiguration(failures: &failures)
         testCacheFallback(failures: &failures)
+        testSSHProbe(failures: &failures)
+        testSSHProbeFailures(failures: &failures)
 
         if failures.isEmpty {
             print("agent node self-test passed")
@@ -192,5 +194,227 @@ enum AgentNodeSelfTest {
         } catch {
             failures.append("node cache save failed")
         }
+    }
+
+    private static func testSSHProbe(failures: inout [String]) {
+        let output = """
+        schema=godexu-node-probe-v1
+        host=Ginger
+        process_count=1
+        heartbeat_epoch=2000000
+        observed_epoch=2000060
+
+        """
+        let executor = RecordingAgentNodeCommandExecutor(
+            result: AgentNodeCommandResult(
+                exitCode: 0,
+                standardOutput: Data(output.utf8),
+                standardError: Data(),
+                timedOut: false
+            )
+        )
+        let descriptor = AgentNodeDescriptor(
+            id: "nas-openclaw",
+            displayName: "OpenClaw",
+            deviceName: "NAS",
+            runtime: .openClaw,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimOpenClawV1
+        )
+        let probe = AgentNodeProbe(executor: executor)
+        let observation: AgentNodeProbeObservation
+        switch probe.probe(descriptor) {
+        case let .success(value):
+            observation = value
+        case .failure:
+            failures.append("valid SSH probe output failed")
+            return
+        }
+
+        if executor.executableURL?.path != "/usr/bin/ssh" {
+            failures.append("probe did not use the system SSH executable")
+        }
+        let arguments = executor.arguments
+        let required = [
+            "BatchMode=yes",
+            "StrictHostKeyChecking=yes",
+            "ConnectionAttempts=1",
+            "ConnectTimeout=4",
+            "spicy-nas-root0"
+        ]
+        for value in required where !arguments.contains(where: { $0.contains(value) }) {
+            failures.append("SSH arguments omitted \(value)")
+        }
+        let joinedArguments = arguments.joined(separator: " ")
+        let forbidden = [
+            "accept-new",
+            "StrictHostKeyChecking=no",
+            "IdentityFile",
+            "password",
+            "cat /etc/passwd"
+        ]
+        for value in forbidden where joinedArguments.localizedCaseInsensitiveContains(value) {
+            failures.append("SSH arguments contained forbidden value \(value)")
+        }
+        if observation.processCount != 1
+            || observation.checkedAt != Date(timeIntervalSince1970: 2_000_060)
+            || observation.heartbeatAt != Date(timeIntervalSince1970: 2_000_000)
+            || observation.sourceLabel != "SSH · Ginger" {
+            failures.append("valid SSH probe output was normalized incorrectly")
+        }
+
+        let hermesExecutor = RecordingAgentNodeCommandExecutor(result: executor.result)
+        let hermes = AgentNodeDescriptor(
+            id: "nas-hermes",
+            displayName: "Hermes",
+            deviceName: "NAS",
+            runtime: .hermes,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimHermesV1
+        )
+        _ = AgentNodeProbe(executor: hermesExecutor).probe(hermes)
+        if executor.arguments.last == hermesExecutor.arguments.last {
+            failures.append("OpenClaw and Hermes used the same compiled probe command")
+        }
+    }
+
+    private static func testSSHProbeFailures(failures: inout [String]) {
+        let descriptor = AgentNodeDescriptor(
+            id: "nas-openclaw",
+            displayName: "OpenClaw",
+            deviceName: "NAS",
+            runtime: .openClaw,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimOpenClawV1
+        )
+        let invalidOutputs = [
+            """
+            schema=unknown
+            host=Ginger
+            process_count=1
+            heartbeat_epoch=0
+            observed_epoch=2000060
+            """,
+            """
+            schema=godexu-node-probe-v1
+            host=Ginger
+            host=Other
+            process_count=1
+            heartbeat_epoch=0
+            observed_epoch=2000060
+            """,
+            """
+            schema=godexu-node-probe-v1
+            host=Ginger
+            process_count=-1
+            heartbeat_epoch=0
+            observed_epoch=2000060
+            """,
+            """
+            schema=godexu-node-probe-v1
+            host=Ginger
+            process_count=1
+            heartbeat_epoch=0
+            observed_epoch=2000060
+            secret=unexpected
+            """
+        ]
+        for output in invalidOutputs {
+            let result = AgentNodeCommandResult(
+                exitCode: 0,
+                standardOutput: Data(output.utf8),
+                standardError: Data(),
+                timedOut: false
+            )
+            let probe = AgentNodeProbe(
+                executor: RecordingAgentNodeCommandExecutor(result: result)
+            )
+            if probe.probe(descriptor) != .failure(.protocolError) {
+                failures.append("invalid SSH protocol output was accepted")
+            }
+        }
+
+        let oversized = AgentNodeCommandResult(
+            exitCode: 0,
+            standardOutput: Data(repeating: 65, count: 32 * 1_024 + 1),
+            standardError: Data(),
+            timedOut: false
+        )
+        if AgentNodeProbe(executor: RecordingAgentNodeCommandExecutor(result: oversized))
+            .probe(descriptor) != .failure(.protocolError) {
+            failures.append("oversized SSH output was accepted")
+        }
+
+        let failuresByResult: [(AgentNodeCommandResult, AgentNodeProbeError)] = [
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data(),
+                    timedOut: true
+                ),
+                .timeout
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data("Permission denied (publickey)".utf8),
+                    timedOut: false
+                ),
+                .authentication
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data("Host key verification failed".utf8),
+                    timedOut: false
+                ),
+                .hostKey
+            ),
+            (
+                AgentNodeCommandResult(
+                    exitCode: 255,
+                    standardOutput: Data(),
+                    standardError: Data("connection closed".utf8),
+                    timedOut: false
+                ),
+                .transport
+            )
+        ]
+        for (result, expected) in failuresByResult {
+            let probe = AgentNodeProbe(
+                executor: RecordingAgentNodeCommandExecutor(result: result)
+            )
+            if probe.probe(descriptor) != .failure(expected) {
+                failures.append("SSH failure was not reduced to \(expected)")
+            }
+        }
+    }
+}
+
+private final class RecordingAgentNodeCommandExecutor: AgentNodeCommandExecuting {
+    let result: AgentNodeCommandResult
+    private(set) var executableURL: URL?
+    private(set) var arguments: [String] = []
+    private(set) var timeout: TimeInterval?
+
+    init(result: AgentNodeCommandResult) {
+        self.result = result
+    }
+
+    func run(
+        executableURL: URL,
+        arguments: [String],
+        timeout: TimeInterval
+    ) -> AgentNodeCommandResult {
+        self.executableURL = executableURL
+        self.arguments = arguments
+        self.timeout = timeout
+        return result
     }
 }
