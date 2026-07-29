@@ -10759,6 +10759,10 @@ struct codexUMain {
             exit(AgentNodeSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-agent-identity") {
+            exit(AgentIdentityProfileSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-codex-token-events") {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
         }
