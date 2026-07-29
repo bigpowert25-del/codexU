@@ -31,7 +31,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1
         )
         let fresh = AgentNodeProbeObservation(
@@ -78,8 +78,8 @@ enum AgentNodeSelfTest {
               "displayName": "OpenClaw",
               "deviceName": "NAS",
               "runtime": "openclaw",
-              "sshHost": "spicy-nas-root0",
-              "networkHost": "192.168.110.49",
+              "sshHost": "my-nas-readonly",
+              "networkHost": "192.0.2.10",
               "probeProfile": "synology-trim-openclaw-v1"
             },
             {
@@ -87,7 +87,7 @@ enum AgentNodeSelfTest {
               "displayName": "Hermes",
               "deviceName": "NAS",
               "runtime": "hermes",
-              "sshHost": "spicy-nas-root0",
+              "sshHost": "my-nas-readonly",
               "probeProfile": "synology-trim-hermes-v1"
             }
           ]
@@ -102,7 +102,7 @@ enum AgentNodeSelfTest {
             if descriptors.map(\.runtime) != [.openClaw, .hermes] {
                 failures.append("configuration did not map stored runtime identifiers")
             }
-            if descriptors.first?.networkHost != "192.168.110.49"
+            if descriptors.first?.networkHost != "192.0.2.10"
                 || descriptors.last?.networkHost != nil {
                 failures.append("configuration did not preserve optional preflight host")
             }
@@ -129,7 +129,7 @@ enum AgentNodeSelfTest {
             "bad`host"
         ]
         for alias in invalidAliases {
-            let invalid = json.replacingOccurrences(of: "spicy-nas-root0", with: alias)
+            let invalid = json.replacingOccurrences(of: "my-nas-readonly", with: alias)
             if (try? AgentNodeConfigurationStore.decode(Data(invalid.utf8))) != nil {
                 failures.append("unsafe SSH alias was accepted: \(alias)")
             }
@@ -149,16 +149,16 @@ enum AgentNodeSelfTest {
         }
 
         let commandField = json.replacingOccurrences(
-            of: "\"sshHost\": \"spicy-nas-root0\",",
-            with: "\"sshHost\": \"spicy-nas-root0\", \"command\": \"cat /etc/passwd\","
+            of: "\"sshHost\": \"my-nas-readonly\",",
+            with: "\"sshHost\": \"my-nas-readonly\", \"command\": \"cat /etc/passwd\","
         )
         if (try? AgentNodeConfigurationStore.decode(Data(commandField.utf8))) != nil {
             failures.append("configuration accepted an arbitrary command field")
         }
 
         let unsafeNetworkHost = json.replacingOccurrences(
-            of: "192.168.110.49",
-            with: "192.168.110.49;open /tmp"
+            of: "192.0.2.10",
+            with: "192.0.2.10;open /tmp"
         )
         if (try? AgentNodeConfigurationStore.decode(Data(unsafeNetworkHost.utf8))) != nil {
             failures.append("configuration accepted an unsafe preflight host")
@@ -176,7 +176,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .hermes,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimHermesV1
         )
         let checkedAt = Date(timeIntervalSince1970: 2_000_000)
@@ -238,7 +238,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1
         )
         let probe = AgentNodeProbe(executor: executor)
@@ -260,7 +260,7 @@ enum AgentNodeSelfTest {
             "StrictHostKeyChecking=yes",
             "ConnectionAttempts=1",
             "ConnectTimeout=4",
-            "spicy-nas-root0"
+            "my-nas-readonly"
         ]
         for value in required where !arguments.contains(where: { $0.contains(value) }) {
             failures.append("SSH arguments omitted \(value)")
@@ -290,7 +290,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .hermes,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimHermesV1
         )
         _ = AgentNodeProbe(executor: hermesExecutor).probe(hermes)
@@ -306,7 +306,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1
         )
         let invalidOutputs = [
@@ -409,7 +409,7 @@ enum AgentNodeSelfTest {
                     exitCode: 255,
                     standardOutput: Data(),
                     standardError: Data(
-                        "ssh: connect to host 192.168.1.2 port 22: Operation not permitted".utf8
+                        "ssh: connect to host 192.0.2.2 port 22: Operation not permitted".utf8
                     ),
                     timedOut: false
                 ),
@@ -470,9 +470,9 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1,
-            networkHost: "192.168.110.49"
+            networkHost: "192.0.2.10"
         )
         let probe = AgentNodeProbe(
             executor: executor,
@@ -494,7 +494,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1
         )
         let hermes = AgentNodeDescriptor(
@@ -503,7 +503,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .hermes,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimHermesV1
         )
         let cachedHermes = AgentNodeSnapshot(

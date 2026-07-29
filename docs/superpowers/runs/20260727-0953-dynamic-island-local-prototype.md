@@ -2,7 +2,7 @@
 
 - run_id: `20260727-0953-dynamic-island-local-prototype`
 - branch: `codex/dynamic-island-local-prototype`
-- worktree: `/Users/mac/.config/superpowers/worktrees/codexU/dynamic-island-local-prototype`
+- worktree: isolated local `codexU/dynamic-island-local-prototype` worktree
 - baseline_sha: `5c47e67`
 - target: local-only macOS codexU Dynamic Island plus Windows WPF prototype
 

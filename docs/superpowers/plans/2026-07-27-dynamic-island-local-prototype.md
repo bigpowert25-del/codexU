@@ -142,7 +142,7 @@ Expected: codexU launches, island appears top-center, main window/status popover
 
 Copy the MIT WPF Dynamic Island base from the isolated clone:
 
-`/Users/mac/.openclaw/workspace/scratch/codexu-dynamic-island-research-20260727/repos/dynamic-island-on-windows`
+`~/.openclaw/workspace/scratch/codexu-dynamic-island-research-20260727/repos/dynamic-island-on-windows`
 
 into:
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added opt-in, read-only Agent node cards for local Codex and explicitly configured NAS OpenClaw / Hermes instances.
+- Added strict node configuration validation, fixed probe profiles, local-network permission diagnostics, and a 24-hour last-known cache that is never presented as live health.
+- Kept users without a NAS on the original local-only path and excluded SSH hosts, network addresses, commands, process output, and credentials from public diagnostics.
+
 ## 1.1.4 - 2026-07-18
 
 - Matched the Chinese Codex official-usage presentation to ChatGPT Profile by formatting official totals in `亿` units.

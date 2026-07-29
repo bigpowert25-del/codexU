@@ -5,7 +5,7 @@
 - Run ID: `godexu-right-island-gap-20260729`
 - Time: `2026-07-29 20:16 CST`
 - Baseline SHA: `943dd7b925da0ca2a751de81755181650557e354`
-- Project root: `/Users/mac/.config/superpowers/worktrees/codexU/dynamic-island-local-prototype`
+- Project root: isolated local `codexU/dynamic-island-local-prototype` worktree
 - Goal: remove the large empty area under side-docked compact and peek content.
 - Excluded: GodexU v2 architecture, agent data sources, NAS, version bump, README/release assets, GitHub push/PR.
 - Remote-write authorization: not granted for this diff.

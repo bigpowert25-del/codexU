@@ -63,7 +63,7 @@ enum AgentNodeSelfTest {
             deviceName: "NAS",
             runtime: .openClaw,
             location: .remote,
-            sshHost: "spicy-nas-root0",
+            sshHost: "my-nas-readonly",
             probeProfile: .synologyTrimOpenClawV1
         )
         let fresh = AgentNodeProbeObservation(
@@ -259,7 +259,7 @@ let json = """
       "displayName": "OpenClaw",
       "deviceName": "NAS",
       "runtime": "openclaw",
-      "sshHost": "spicy-nas-root0",
+      "sshHost": "my-nas-readonly",
       "probeProfile": "synology-trim-openclaw-v1"
     },
     {
@@ -267,7 +267,7 @@ let json = """
       "displayName": "Hermes",
       "deviceName": "NAS",
       "runtime": "hermes",
-      "sshHost": "spicy-nas-root0",
+      "sshHost": "my-nas-readonly",
       "probeProfile": "synology-trim-hermes-v1"
     }
   ]
@@ -735,7 +735,7 @@ Expected: 13 built-in self-test entry points plus parser fixtures pass with zero
 
 Create the Application Support directory if absent and install a local configuration using:
 
-- `sshHost`: `spicy-nas-root0`;
+- `sshHost`: `my-nas-readonly`;
 - the OpenClaw and Hermes descriptors from the example;
 - no password, key path, command, remote path, token, or environment value.
 

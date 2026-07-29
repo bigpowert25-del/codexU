@@ -1,7 +1,7 @@
 # codexU
 
 > [!IMPORTANT]
-> **本机多 Agent 定制版。** Codex 始终保留，可在设置中单选 OpenClaw、Claude Code 或 Hermes 作为第二 Agent。各 Agent 的 token 按实际执行方分别统计，任务明确标记来源；未选中的 Agent 不会扫描其本机目录。自动上游更新已关闭，避免覆盖本机定制。
+> **本机优先的多 Agent 定制版。** Codex 始终保留，可在设置中单选 OpenClaw、Claude Code 或 Hermes 作为第二 Agent。各 Agent 的 token 按实际执行方分别统计，任务明确标记来源；未选中的 Agent 不会扫描其本机目录。可选的远端节点观察只读取用户显式配置的状态，不接管 Agent，也不把数据上传到第三方。自动上游更新已关闭，避免覆盖本机定制。
 
 [English](README.en.md)
 
@@ -22,6 +22,16 @@ codexU 是一个 macOS 菜单栏与桌面应用，用来查看 Codex 额度、Co
 ![codexU v1.1.0 第二 Agent 单选设置](docs/screenshot-v1.1.0-agent-settings.png)
 
 ![codexU v1.1.0 菜单栏 Runtime 状态](docs/screenshot-v1.1.0-runtime-menu.png)
+
+## Phase 1：可选的 Agent 节点观察
+
+当前开发分支在原有 codexU 界面中增加了只读节点卡片，用于聚合本机 Codex 以及用户自行配置的 NAS OpenClaw / Hermes 状态。没有 NAS 的用户无需配置，应用会保持原来的本机模式；配置远端节点后，应用只执行固定的进程数和心跳时间探测，不发送任务、不修改 NAS 文件，也不把 SSH 主机、命令、输出或凭据写进公开 JSON。
+
+![codexU Phase 1 本机 Codex 与 NAS OpenClaw / Hermes 节点卡片](docs/screenshot-phase1-agent-nodes.png)
+
+节点配置采用本机私有文件 `~/Library/Application Support/codexU/nodes.json`。可复制 [安全示例](docs/examples/agent-nodes.example.json) 后填写自己的 SSH alias 和局域网主机；不要提交真实主机、用户名、地址或密钥。远端不可达时，界面最多保留 24 小时的最后已知缓存，并明确标为缓存/过期，不会伪装成实时状态。
+
+macOS 图形应用首次访问局域网时可能需要“本地网络”权限。源码已声明用途说明并在失败时提供本地提示；若使用临时/自签构建，macOS 仍可能不稳定地记录该权限。面向其他用户分发时应使用 Apple Developer ID 签名与公证，具体流程见 [DISTRIBUTION.md](DISTRIBUTION.md)。
 
 ## v1.2.0 动态岛与桌面状态
 
@@ -136,7 +146,7 @@ codexU 目前通过 GitHub Release 的 DMG 安装包分发，不经过 Mac App S
 
 也可以在 Finder 中右键点击 `codexU.app`，选择 **打开**，再确认系统安全提示。
 
-codexU 始终读取本机 `~/.codex/`；只读取当前选中 Agent 对应的 `~/.openclaw/`、`~/.claude/` 或 `~/.hermes/state.db` 结构化用量与任务元数据。本定制版不读取 NAS OpenClaw。
+codexU 始终读取本机 `~/.codex/`；只读取当前选中 Agent 对应的 `~/.openclaw/`、`~/.claude/` 或 `~/.hermes/state.db` 结构化用量与任务元数据。可选的节点观察只有在用户创建本机 `nodes.json` 后才读取显式配置的远端 OpenClaw / Hermes 状态；默认不连接 NAS。
 
 ## 安装
 
