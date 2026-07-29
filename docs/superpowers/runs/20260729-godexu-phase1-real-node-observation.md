@@ -2,7 +2,8 @@
 
 - Date: 2026-07-29 Asia/Shanghai
 - Baseline: `2f6d550`
-- Candidate: `ebf741f`
+- Accepted implementation: `62acc4f`
+- Public review candidate: `b48c7c3`
 - Installed version: `1.2.0`
 - Scope: local Codex plus read-only NAS OpenClaw and Hermes observation
 
@@ -16,7 +17,8 @@
 | Installed app | passed | `/Applications/codexU.app` matches the optimized build executable hash and remains version `1.2.0`. |
 | GUI live NAS observation | partial | Native preflight returned macOS local-network denial. The UI correctly showed cached state plus `允许局域网`; it did not promote cache to live health. |
 | NAS writes | not performed | All NAS checks were read-only process and file-modification-time probes. |
-| GitHub/release | not performed | No push, PR, tag, release, certificate, or notarization action was authorized for this phase. |
+| GitHub branch / Draft PR | passed | Public fork branch and [Draft PR #1](https://github.com/bigpowert25-del/codexU/pull/1) were read back at candidate `b48c7c3`; the PR includes the root cause, privacy boundary, verification, current screenshot, and open-source attribution. |
+| Release / formal signing | blocked | No tag, GitHub Release, or DMG upload was performed. This Mac has no Apple-issued Developer ID Application identity, so a broadly distributed signed/notarized build cannot be produced here yet. |
 
 ## Real-node result
 
