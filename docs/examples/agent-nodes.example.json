@@ -1,0 +1,21 @@
+{
+  "schema": "godexu-agent-nodes-v1",
+  "nodes": [
+    {
+      "id": "nas-openclaw",
+      "displayName": "OpenClaw",
+      "deviceName": "NAS",
+      "runtime": "openclaw",
+      "sshHost": "my-nas-readonly",
+      "probeProfile": "synology-trim-openclaw-v1"
+    },
+    {
+      "id": "nas-hermes",
+      "displayName": "Hermes",
+      "deviceName": "NAS",
+      "runtime": "hermes",
+      "sshHost": "my-nas-readonly",
+      "probeProfile": "synology-trim-hermes-v1"
+    }
+  ]
+}
