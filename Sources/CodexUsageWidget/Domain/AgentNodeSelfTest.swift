@@ -8,6 +8,9 @@ enum AgentNodeSelfTest {
         testCacheFallback(failures: &failures)
         testSSHProbe(failures: &failures)
         testSSHProbeFailures(failures: &failures)
+        testNodeReader(failures: &failures)
+        testLocalCodexStateMapping(failures: &failures)
+        testNodeJSON(failures: &failures)
 
         if failures.isEmpty {
             print("agent node self-test passed")
@@ -395,6 +398,186 @@ enum AgentNodeSelfTest {
             }
         }
     }
+
+    private static func testNodeReader(failures: inout [String]) {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let openClaw = AgentNodeDescriptor(
+            id: "nas-openclaw",
+            displayName: "OpenClaw",
+            deviceName: "NAS",
+            runtime: .openClaw,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimOpenClawV1
+        )
+        let hermes = AgentNodeDescriptor(
+            id: "nas-hermes",
+            displayName: "Hermes",
+            deviceName: "NAS",
+            runtime: .hermes,
+            location: .remote,
+            sshHost: "spicy-nas-root0",
+            probeProfile: .synologyTrimHermesV1
+        )
+        let cachedHermes = AgentNodeSnapshot(
+            descriptor: hermes,
+            health: .degraded,
+            checkedAt: now.addingTimeInterval(-600),
+            lastSeenAt: now.addingTimeInterval(-600),
+            heartbeatAt: now.addingTimeInterval(-3_600),
+            processCount: 1,
+            sourceLabel: "SSH · Ginger",
+            detailCode: "process-without-fresh-heartbeat",
+            isFromCache: false
+        )
+        let cache = InMemoryAgentNodeSnapshotCache(snapshots: [cachedHermes])
+        let probe = StubAgentNodeProbe(results: [
+            openClaw.id: .success(
+                AgentNodeProbeObservation(
+                    descriptor: openClaw,
+                    checkedAt: now,
+                    processCount: 1,
+                    heartbeatAt: now.addingTimeInterval(-60),
+                    sourceLabel: "SSH · Ginger"
+                )
+            ),
+            hermes.id: .failure(.transport)
+        ])
+        let reader = AgentNodeReader(
+            configurationStore: StubAgentNodeConfigurationStore(descriptors: [openClaw, hermes]),
+            probe: probe,
+            cache: cache,
+            localDeviceName: { "Mac Studio" }
+        )
+        let codex = RuntimeUsageSnapshot(
+            scope: .codex,
+            snapshot: .empty,
+            status: .available,
+            quotaSourceLabel: "test",
+            usageSourceLabel: "test"
+        )
+        let snapshots = reader.load(codexRuntime: codex, now: now)
+        if snapshots.map(\.id) != ["local-codex", "nas-openclaw", "nas-hermes"] {
+            failures.append("node reader did not preserve local-first configuration order")
+        }
+        if snapshots.map(\.health) != [.available, .available, .stale] {
+            failures.append("node reader did not isolate live and cached outcomes")
+        }
+        if snapshots.last?.isFromCache != true
+            || snapshots.last?.lastSeenAt != cachedHermes.lastSeenAt {
+            failures.append("node reader did not preserve cached last-seen state")
+        }
+        if cache.savedSnapshots.first?.id != "local-codex"
+            || !cache.savedSnapshots.contains(where: { $0.id == "nas-openclaw" })
+            || !cache.savedSnapshots.contains(where: { $0.id == "nas-hermes" && !$0.isFromCache }) {
+            failures.append("node reader cache merge discarded live or last-known nodes")
+        }
+
+        let noConfiguration = AgentNodeReader(
+            configurationStore: StubAgentNodeConfigurationStore(descriptors: []),
+            probe: StubAgentNodeProbe(results: [:]),
+            cache: InMemoryAgentNodeSnapshotCache(snapshots: []),
+            localDeviceName: { "Mac" }
+        ).load(codexRuntime: codex, now: now)
+        if noConfiguration.map(\.id) != ["local-codex"] {
+            failures.append("no-NAS configuration was not a local-only state")
+        }
+
+        let noCache = AgentNodeReader(
+            configurationStore: StubAgentNodeConfigurationStore(descriptors: [openClaw]),
+            probe: StubAgentNodeProbe(results: [openClaw.id: .failure(.timeout)]),
+            cache: InMemoryAgentNodeSnapshotCache(snapshots: []),
+            localDeviceName: { "Mac" }
+        ).load(codexRuntime: codex, now: now)
+        if noCache.last?.health != .unreachable
+            || noCache.last?.detailCode != "probe-timeout" {
+            failures.append("failed live probe without cache was not unreachable")
+        }
+    }
+
+    private static func testLocalCodexStateMapping(failures: inout [String]) {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let expected: [(RuntimeMenuStatus, AgentNodeHealth)] = [
+            (.available, .available),
+            (.localOnly, .available),
+            (.stale, .stale),
+            (.snapshotNeeded, .degraded),
+            (.unavailable, .unreachable)
+        ]
+        for (runtimeStatus, nodeHealth) in expected {
+            let runtime = RuntimeUsageSnapshot(
+                scope: .codex,
+                snapshot: .empty,
+                status: runtimeStatus,
+                quotaSourceLabel: "test",
+                usageSourceLabel: "test"
+            )
+            let nodes = AgentNodeReader(
+                configurationStore: StubAgentNodeConfigurationStore(descriptors: []),
+                probe: StubAgentNodeProbe(results: [:]),
+                cache: InMemoryAgentNodeSnapshotCache(snapshots: []),
+                localDeviceName: { "Mac" }
+            ).load(codexRuntime: runtime, now: now)
+            if nodes.first?.health != nodeHealth {
+                failures.append("Codex runtime \(runtimeStatus) mapped to the wrong node health")
+            }
+        }
+    }
+
+    private static func testNodeJSON(failures: inout [String]) {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let descriptor = AgentNodeDescriptor(
+            id: "nas-openclaw",
+            displayName: "OpenClaw",
+            deviceName: "NAS",
+            runtime: .openClaw,
+            location: .remote,
+            sshHost: "private-ssh-alias",
+            probeProfile: .synologyTrimOpenClawV1
+        )
+        let snapshot = AgentNodeSnapshot(
+            descriptor: descriptor,
+            health: .degraded,
+            checkedAt: now,
+            lastSeenAt: now,
+            heartbeatAt: now.addingTimeInterval(-3_600),
+            processCount: 1,
+            sourceLabel: "SSH · Ginger",
+            detailCode: "process-without-fresh-heartbeat",
+            isFromCache: false
+        )
+        let object = agentNodesJSONObject([snapshot], generatedAt: now)
+        guard object["schema"] as? String == "godexu-agent-node-snapshots-v1",
+              let nodes = object["nodes"] as? [[String: Any]],
+              let node = nodes.first
+        else {
+            failures.append("agent node JSON schema was not emitted")
+            return
+        }
+        if node["runtime"] as? String != "openclaw"
+            || node["health"] as? String != "degraded"
+            || node["processCount"] as? Int != 1
+            || node["capabilities"] as? [String] != descriptor.capabilities {
+            failures.append("agent node JSON omitted normalized fields")
+        }
+        let forbidden = [
+            "sshHost",
+            "probeProfile",
+            "command",
+            "stdout",
+            "stderr",
+            "environment",
+            "credentials"
+        ]
+        for key in forbidden where node[key] != nil {
+            failures.append("agent node JSON leaked \(key)")
+        }
+        let serialized = (try? JSONSerialization.data(withJSONObject: object))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        if serialized.contains("private-ssh-alias") {
+            failures.append("agent node JSON leaked the SSH alias")
+        }
+    }
 }
 
 private final class RecordingAgentNodeCommandExecutor: AgentNodeCommandExecuting {
@@ -416,5 +599,52 @@ private final class RecordingAgentNodeCommandExecutor: AgentNodeCommandExecuting
         self.arguments = arguments
         self.timeout = timeout
         return result
+    }
+}
+
+private struct StubAgentNodeConfigurationStore: AgentNodeConfigurationLoading {
+    let descriptors: [AgentNodeDescriptor]
+
+    func load() throws -> [AgentNodeDescriptor] {
+        descriptors
+    }
+}
+
+private struct StubAgentNodeProbe: AgentNodeProbing {
+    let results: [String: Result<AgentNodeProbeObservation, AgentNodeProbeError>]
+
+    func probe(
+        _ descriptor: AgentNodeDescriptor
+    ) -> Result<AgentNodeProbeObservation, AgentNodeProbeError> {
+        results[descriptor.id] ?? .failure(.protocolError)
+    }
+}
+
+private final class InMemoryAgentNodeSnapshotCache: AgentNodeSnapshotCaching {
+    private(set) var snapshots: [AgentNodeSnapshot]
+    private(set) var savedSnapshots: [AgentNodeSnapshot] = []
+
+    init(snapshots: [AgentNodeSnapshot]) {
+        self.snapshots = snapshots
+    }
+
+    func load() -> [AgentNodeSnapshot] {
+        snapshots
+    }
+
+    func save(_ snapshots: [AgentNodeSnapshot]) throws {
+        savedSnapshots = snapshots
+        self.snapshots = snapshots
+    }
+
+    func staleSnapshot(
+        for descriptor: AgentNodeDescriptor,
+        from snapshots: [AgentNodeSnapshot],
+        now: Date
+    ) -> AgentNodeSnapshot? {
+        AgentNodeSnapshotCache(
+            cacheURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("unused-agent-node-cache.json")
+        ).staleSnapshot(for: descriptor, from: snapshots, now: now)
     }
 }

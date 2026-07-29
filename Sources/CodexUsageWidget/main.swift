@@ -10760,6 +10760,16 @@ struct codexUMain {
             exit(DynamicIslandPresentationSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--dump-agent-nodes") {
+            let runtimes = MultiRuntimeUsageReader().load(scopes: [.codex])
+            let nodes = AgentNodeReader().load(
+                codexRuntime: runtimes.runtime(for: .codex),
+                now: Date()
+            )
+            dumpAgentNodesJSON(nodes)
+            return
+        }
+
         if CommandLine.arguments.contains("--dump-json") {
             dumpJSON(MultiRuntimeUsageReader().load())
             return
