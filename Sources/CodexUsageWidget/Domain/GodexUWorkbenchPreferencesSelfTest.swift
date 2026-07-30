@@ -59,6 +59,90 @@ enum GodexUWorkbenchPreferencesSelfTest {
             "every stage should show metric source labels"
         )
 
+        let lightLayout = GodexUWorkbenchStage.light.layoutProfile
+        let syncLayout = GodexUWorkbenchStage.sync.layoutProfile
+        let commandLayout = GodexUWorkbenchStage.command.layoutProfile
+        expect(
+            Set([lightLayout.identity, syncLayout.identity, commandLayout.identity]).count == 3,
+            "Light, Sync, and Command should have unique layout profile identities"
+        )
+        expect(
+            lightLayout.sections == Set([
+                .goalHero,
+                .relationshipGraph,
+                .metricRail,
+                .taskComposer
+            ]),
+            "Light should keep only the glance modules and compact composer"
+        )
+        expect(
+            syncLayout.sections == Set([
+                .goalHero,
+                .relationshipGraph,
+                .metricRail,
+                .projectContinuation,
+                .systemTelemetry,
+                .statusTicker,
+                .taskComposer
+            ]),
+            "Sync should expose the complete seven-module overview"
+        )
+        expect(
+            commandLayout.sections == Set([
+                .goalHero,
+                .relationshipGraph,
+                .metricRail,
+                .projectContinuation,
+                .systemTelemetry,
+                .statusTicker,
+                .taskComposer,
+                .commandInspector
+            ]),
+            "Command should add the persistent operations inspector"
+        )
+        expect(
+            lightLayout.heroPresentation == .focus,
+            "Light should prioritize a focused hero"
+        )
+        expect(
+            syncLayout.heroPresentation == .balanced,
+            "Sync should balance the hero and relationship graph"
+        )
+        expect(
+            commandLayout.heroPresentation == .graphWeighted,
+            "Command should give the relationship graph more hero space"
+        )
+        expect(
+            lightLayout.lowerContentPresentation == .hidden,
+            "Light should hide lower operational content"
+        )
+        expect(
+            syncLayout.lowerContentPresentation == .split,
+            "Sync should split projects and telemetry in the lower region"
+        )
+        expect(
+            commandLayout.lowerContentPresentation == .singleColumn,
+            "Command should use one operational column beside the inspector"
+        )
+        expect(
+            lightLayout.composerPresentation == .compact,
+            "Light should use the compact composer"
+        )
+        expect(
+            syncLayout.composerPresentation == .standard
+                && commandLayout.composerPresentation == .standard,
+            "Sync and Command should use the standard composer"
+        )
+        expect(
+            lightLayout.inspectorPresentation == .hidden
+                && syncLayout.inspectorPresentation == .hidden,
+            "Light and Sync should not reserve a persistent inspector"
+        )
+        expect(
+            commandLayout.inspectorPresentation == .persistent,
+            "Command should reserve a persistent read-only inspector"
+        )
+
         let initial = AppSettings(defaults: defaults)
         expect(initial.workbenchSkin == .titaniumStudio, "AppSettings skin default changed")
         expect(initial.workbenchStage == .sync, "AppSettings stage default changed")
@@ -93,10 +177,213 @@ enum GodexUWorkbenchPreferencesSelfTest {
         let titanium = GodexUSkin.titaniumStudio.visualTokens
         expect(titanium.accentBlue > titanium.accentRed, "Titanium accent should remain blue-led")
         expect(titanium.chromeOpacity > 0, "Titanium chrome opacity should be visible")
+
+        let skinTokens = GodexUSkin.allCases.map(\.visualTokens)
+
         expect(
-            Set(GodexUSkin.allCases.map(\.visualTokens.identity)).count
-                == GodexUSkin.allCases.count,
-            "skin token identities should be unique"
+            Set(skinTokens.map(\.identity)).count == skinTokens.count,
+            "full-surface palette identities should be unique"
+        )
+
+        func hasSameVisualPayload(
+            _ left: GodexUSkinVisualTokens,
+            _ right: GodexUSkinVisualTokens
+        ) -> Bool {
+            left.canvasColor == right.canvasColor
+                && left.deepCanvasColor == right.deepCanvasColor
+                && left.shellColor == right.shellColor
+                && left.sidebarColor == right.sidebarColor
+                && left.primaryPanelColor == right.primaryPanelColor
+                && left.elevatedPanelColor == right.elevatedPanelColor
+                && left.primaryTextColor == right.primaryTextColor
+                && left.secondaryTextColor == right.secondaryTextColor
+                && left.dimTextColor == right.dimTextColor
+                && left.accentColor == right.accentColor
+                && left.secondaryAccentColor == right.secondaryAccentColor
+                && left.attentionAccentColor == right.attentionAccentColor
+                && left.subtleSeparatorColor == right.subtleSeparatorColor
+                && left.strongSeparatorColor == right.strongSeparatorColor
+                && left.controlRadius == right.controlRadius
+                && left.panelRadius == right.panelRadius
+                && left.density == right.density
+                && left.shellShadow == right.shellShadow
+                && left.showsGrid == right.showsGrid
+                && left.chromeOpacity == right.chromeOpacity
+                && left.selectedOpacity == right.selectedOpacity
+        }
+
+        for leftIndex in skinTokens.indices {
+            for rightIndex in skinTokens.indices where rightIndex > leftIndex {
+                expect(
+                    !hasSameVisualPayload(skinTokens[leftIndex], skinTokens[rightIndex]),
+                    "\(GodexUSkin.allCases[leftIndex].rawValue) and "
+                        + "\(GodexUSkin.allCases[rightIndex].rawValue) should have "
+                        + "different complete visual tokens"
+                )
+            }
+        }
+        for (skin, tokens) in zip(GodexUSkin.allCases, skinTokens) {
+            let fullSurfacePalette = [
+                tokens.canvasColor,
+                tokens.deepCanvasColor,
+                tokens.shellColor,
+                tokens.sidebarColor,
+                tokens.primaryPanelColor,
+                tokens.elevatedPanelColor,
+                tokens.primaryTextColor,
+                tokens.secondaryTextColor,
+                tokens.dimTextColor,
+                tokens.accentColor,
+                tokens.secondaryAccentColor,
+                tokens.attentionAccentColor,
+                tokens.subtleSeparatorColor,
+                tokens.strongSeparatorColor
+            ]
+            expect(
+                fullSurfacePalette.allSatisfy { color in
+                    (0.0...1.0).contains(color.red)
+                        && (0.0...1.0).contains(color.green)
+                        && (0.0...1.0).contains(color.blue)
+                        && (0.0...1.0).contains(color.opacity)
+                },
+                "\(skin.rawValue) should provide a complete normalized surface palette"
+            )
+            let essentialSurfaceAndTextColors = [
+                tokens.canvasColor,
+                tokens.deepCanvasColor,
+                tokens.shellColor,
+                tokens.sidebarColor,
+                tokens.primaryPanelColor,
+                tokens.elevatedPanelColor,
+                tokens.primaryTextColor,
+                tokens.secondaryTextColor,
+                tokens.dimTextColor
+            ]
+            expect(
+                essentialSurfaceAndTextColors.allSatisfy { $0.opacity > 0 },
+                "\(skin.rawValue) should keep essential surfaces and text visible"
+            )
+            let backgroundColors = [
+                tokens.canvasColor,
+                tokens.deepCanvasColor,
+                tokens.shellColor,
+                tokens.sidebarColor,
+                tokens.primaryPanelColor,
+                tokens.elevatedPanelColor
+            ]
+            let foregroundColors = [
+                tokens.primaryTextColor,
+                tokens.secondaryTextColor,
+                tokens.dimTextColor
+            ]
+            expect(
+                foregroundColors.allSatisfy { !backgroundColors.contains($0) },
+                "\(skin.rawValue) text colors should differ from every background surface"
+            )
+            expect(
+                tokens.controlRadius >= 0
+                    && tokens.panelRadius >= tokens.controlRadius,
+                "\(skin.rawValue) should provide coherent control and panel radii"
+            )
+            expect(
+                (0.0...1.0).contains(tokens.shellShadow.opacity)
+                    && tokens.shellShadow.opacity.isFinite
+                    && tokens.shellShadow.radius.isFinite
+                    && tokens.shellShadow.radius >= 0
+                    && tokens.shellShadow.xOffset.isFinite
+                    && tokens.shellShadow.yOffset.isFinite,
+                "\(skin.rawValue) should provide a valid shell shadow"
+            )
+            let shellShadowColorComponents = [
+                tokens.shellShadow.color.red,
+                tokens.shellShadow.color.green,
+                tokens.shellShadow.color.blue,
+                tokens.shellShadow.color.opacity
+            ]
+            expect(
+                shellShadowColorComponents.allSatisfy {
+                    $0.isFinite && (0.0...1.0).contains($0)
+                },
+                "\(skin.rawValue) should provide a normalized shell shadow color"
+            )
+            expect(
+                tokens.chromeOpacity.isFinite
+                    && (0.0...1.0).contains(tokens.chromeOpacity)
+                    && tokens.selectedOpacity.isFinite
+                    && (0.0...1.0).contains(tokens.selectedOpacity),
+                "\(skin.rawValue) should provide normalized chrome and selection opacity"
+            )
+        }
+
+        let normalizedInvalidColor = GodexUNormalizedColor(
+            red: -0.5,
+            green: 1.5,
+            blue: .nan,
+            opacity: .infinity
+        )
+        expect(
+            normalizedInvalidColor.red == 0
+                && normalizedInvalidColor.green == 1
+                && normalizedInvalidColor.blue == 0
+                && normalizedInvalidColor.opacity == 0,
+            "normalized colors should clamp finite components and replace nonfinite values with zero"
+        )
+        let normalizedInvalidShadow = GodexUShellShadow(
+            color: normalizedInvalidColor,
+            opacity: 1.5,
+            radius: -8,
+            xOffset: .nan,
+            yOffset: -.infinity
+        )
+        expect(
+            normalizedInvalidShadow.opacity == 1
+                && normalizedInvalidShadow.radius == 0
+                && normalizedInvalidShadow.xOffset == 0
+                && normalizedInvalidShadow.yOffset == 0,
+            "shell shadows should clamp opacity and radius and zero nonfinite offsets"
+        )
+        let normalizedNonfiniteShadow = GodexUShellShadow(
+            color: normalizedInvalidColor,
+            opacity: .nan,
+            radius: .infinity,
+            xOffset: 0,
+            yOffset: 0
+        )
+        expect(
+            normalizedNonfiniteShadow.opacity == 0
+                && normalizedNonfiniteShadow.radius == 0,
+            "shell shadows should replace nonfinite opacity and radius with zero"
+        )
+
+        func canvasLuminance(_ tokens: GodexUSkinVisualTokens) -> Double {
+            0.2126 * tokens.canvasColor.red
+                + 0.7152 * tokens.canvasColor.green
+                + 0.0722 * tokens.canvasColor.blue
+        }
+
+        let lightCanvasLuminanceFloor = 0.65
+        let tacticalCanvasLuminanceCeiling = 0.10
+        let tacticalMaximumControlRadius = 2.0
+        let tacticalMaximumPanelRadius = 4.0
+        let tactical = GodexUSkin.tacticalOLED.visualTokens
+        expect(
+            canvasLuminance(titanium) >= lightCanvasLuminanceFloor,
+            "Titanium Studio should retain a light canvas"
+        )
+        expect(
+            canvasLuminance(tactical) <= tacticalCanvasLuminanceCeiling,
+            "Tactical OLED should retain a near-black canvas"
+        )
+        expect(
+            tactical.controlRadius <= tacticalMaximumControlRadius
+                && tactical.panelRadius <= tacticalMaximumPanelRadius
+                && tactical.density != titanium.density,
+            "Tactical OLED should retain compact square geometry and distinct density"
+        )
+        expect(
+            skinTokens.contains(where: \.showsGrid)
+                && skinTokens.contains(where: { !$0.showsGrid }),
+            "skin contract should support both visible and hidden canvas grids"
         )
 
         let taskBoard = TaskBoard(
