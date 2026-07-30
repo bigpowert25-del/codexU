@@ -3,6 +3,19 @@ import Foundation
 @main
 struct GodexUMCPProbe {
     static func main() {
+        if CommandLine.arguments.count == 4,
+           CommandLine.arguments[1] == "--live" {
+            runLive(
+                serverURL: URL(
+                    fileURLWithPath: CommandLine.arguments[2]
+                ).standardizedFileURL,
+                outputURL: URL(
+                    fileURLWithPath: CommandLine.arguments[3]
+                ).standardizedFileURL
+            )
+            return
+        }
+
         var failures: [String] = []
         guard CommandLine.arguments.count == 2 else {
             fputs("MCP probe failed: expected server binary\n", stderr)
@@ -90,6 +103,233 @@ struct GodexUMCPProbe {
             print("MCP protocol probe passed")
         }
         exit(failures.isEmpty ? 0 : 1)
+    }
+
+    private static func runLive(serverURL: URL, outputURL: URL) {
+        var failures: [String] = []
+        var metrics: [String: Any] = [:]
+        try? FileManager.default.removeItem(at: outputURL)
+        do {
+            let startupStart = Date()
+            let connection = try ProtocolConnection(serverURL: serverURL)
+            _ = try initialize(connection, failures: &failures)
+            metrics["startupMilliseconds"] = milliseconds(since: startupStart)
+
+            let toolsResponse = try connection.request(method: "tools/list")
+            let tools = (
+                (toolsResponse["result"] as? [String: Any])?["tools"]
+                    as? [[String: Any]]
+            ) ?? []
+            check(
+                Set(tools.compactMap { $0["name"] as? String }) == Set([
+                    "godexu_project_list",
+                    "godexu_project_get",
+                    "godexu_handoff_list"
+                ]),
+                "live tool list mismatch",
+                failures: &failures
+            )
+
+            let firstStart = Date()
+            let firstList = try connection.request(
+                method: "tools/call",
+                params: [
+                    "name": "godexu_project_list",
+                    "arguments": ["limit": 50]
+                ]
+            )
+            metrics["uncachedListMilliseconds"] = milliseconds(
+                since: firstStart
+            )
+            check(
+                !toolIsError(firstList)
+                    && structuredContent(firstList)?["runtimeAvailability"]
+                        != nil
+                    && structuredContent(firstList)?["warnings"] != nil,
+                "live project list failed",
+                failures: &failures
+            )
+
+            let cachedStart = Date()
+            let cachedList = try connection.request(
+                method: "tools/call",
+                params: [
+                    "name": "godexu_project_list",
+                    "arguments": ["limit": 50]
+                ]
+            )
+            metrics["cachedListMilliseconds"] = milliseconds(
+                since: cachedStart
+            )
+            check(
+                !toolIsError(cachedList),
+                "live cached project list failed",
+                failures: &failures
+            )
+
+            let projects = structuredContent(firstList)?["projects"]
+                as? [[String: Any]] ?? []
+            metrics["projectCount"] = projects.count
+            metrics["taskCount"] = projects.reduce(0) {
+                $0 + (($1["totalCount"] as? Int) ?? 0)
+            }
+            if let projectID = projects.first?["id"] as? String {
+                let project = try connection.request(
+                    method: "tools/call",
+                    params: [
+                        "name": "godexu_project_get",
+                        "arguments": ["projectID": projectID]
+                    ]
+                )
+                check(
+                    !toolIsError(project),
+                    "live project detail failed",
+                    failures: &failures
+                )
+                let resource = try connection.request(
+                    method: "resources/read",
+                    params: ["uri": "godexu://projects/\(projectID)"]
+                )
+                check(
+                    resourceText(resource) != nil,
+                    "live project resource failed",
+                    failures: &failures
+                )
+            }
+
+            let handoffList = try connection.request(
+                method: "tools/call",
+                params: [
+                    "name": "godexu_handoff_list",
+                    "arguments": ["limit": 50]
+                ]
+            )
+            check(
+                !toolIsError(handoffList),
+                "live handoff list failed",
+                failures: &failures
+            )
+            let handoffs = structuredContent(handoffList)?["handoffs"]
+                as? [[String: Any]] ?? []
+            metrics["handoffCount"] = handoffs.count
+            if let handoffID = handoffs.first?["id"] as? String {
+                let resource = try connection.request(
+                    method: "resources/read",
+                    params: ["uri": "godexu://handoffs/\(handoffID)"]
+                )
+                check(
+                    resourceText(resource) != nil,
+                    "live handoff resource failed",
+                    failures: &failures
+                )
+            }
+
+            let projectResource = try connection.request(
+                method: "resources/read",
+                params: ["uri": "godexu://projects"]
+            )
+            check(
+                resourceText(projectResource) != nil,
+                "live project-list resource failed",
+                failures: &failures
+            )
+            let invalid = try connection.request(
+                method: "tools/call",
+                params: [
+                    "name": "godexu_project_get",
+                    "arguments": ["projectID": "../../../private"]
+                ]
+            )
+            check(
+                toolIsError(invalid) && structuredContent(invalid) == nil,
+                "live invalid project ID error violated the output schema",
+                failures: &failures
+            )
+
+            metrics["rssKilobytes"] = residentKilobytes(
+                processID: connection.processID
+            )
+            let responseData = try JSONSerialization.data(
+                withJSONObject: connection.responses,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+            let publicText = String(decoding: responseData, as: UTF8.self)
+            check(
+                !publicText.contains(NSHomeDirectory())
+                    && !publicText.contains("/Users/")
+                    && !publicText.contains("/Volumes/"),
+                "live protocol output contains a local path",
+                failures: &failures
+            )
+            check(
+                Set([
+                    "handoffNote",
+                    "recentReply",
+                    "rolloutPath",
+                    "sessionFile",
+                    "prompt",
+                    "toolArguments",
+                    "transcript"
+                ]).isDisjoint(with: recursiveKeys(connection.responses)),
+                "live protocol output contains prohibited keys",
+                failures: &failures
+            )
+            let stderrText = try connection.close()
+            check(
+                stderrText.isEmpty,
+                "live server wrote diagnostics",
+                failures: &failures
+            )
+            check(
+                connection.rawLines.allSatisfy {
+                    (try? JSONSerialization.jsonObject(with: $0)) != nil
+                },
+                "live server stdout contained non-JSON-RPC output",
+                failures: &failures
+            )
+            if failures.isEmpty {
+                try responseData.write(to: outputURL, options: .atomic)
+            }
+        } catch {
+            failures.append("live protocol probe execution failed")
+        }
+
+        failures.forEach {
+            fputs("MCP live probe failed: \($0)\n", stderr)
+        }
+        if failures.isEmpty,
+           let data = try? JSONSerialization.data(
+                withJSONObject: metrics,
+                options: [.sortedKeys]
+           ) {
+            print(String(decoding: data, as: UTF8.self))
+        }
+        exit(failures.isEmpty ? 0 : 1)
+    }
+
+    private static func milliseconds(since start: Date) -> Int {
+        Int((Date().timeIntervalSince(start) * 1_000).rounded())
+    }
+
+    private static func residentKilobytes(processID: Int32) -> Int {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = [
+            "-o", "rss=", "-p", String(processID)
+        ]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let value = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return Int(value) ?? 0
+        } catch {
+            return 0
+        }
     }
 
     private static func runValidProtocol(
@@ -186,7 +426,10 @@ struct GodexUMCPProbe {
         )
         check(
             !toolIsError(listResponse)
-                && structuredContent(listResponse)?["projects"] != nil,
+                && structuredContent(listResponse)?["projects"] != nil
+                && structuredContent(listResponse)?["runtimeAvailability"]
+                    != nil
+                && structuredContent(listResponse)?["warnings"] != nil,
             "project list failed",
             failures: &failures
         )
@@ -246,8 +489,9 @@ struct GodexUMCPProbe {
             params: ["name": "godexu_unknown", "arguments": [:]]
         )
         check(
-            toolIsError(invalidTool),
-            "unknown tool was accepted",
+            ((invalidTool["error"] as? [String: Any])?["code"] as? Int)
+                == -32602,
+            "unknown tool did not return a protocol error",
             failures: &failures
         )
         let unsafeID = try connection.request(
@@ -258,8 +502,8 @@ struct GodexUMCPProbe {
             ]
         )
         check(
-            toolIsError(unsafeID),
-            "unsafe project ID was accepted",
+            toolIsError(unsafeID) && structuredContent(unsafeID) == nil,
+            "unsafe project ID error violated the output schema",
             failures: &failures
         )
         let negativeLimit = try connection.request(
@@ -270,8 +514,9 @@ struct GodexUMCPProbe {
             ]
         )
         check(
-            toolIsError(negativeLimit),
-            "negative limit was accepted",
+            toolIsError(negativeLimit)
+                && structuredContent(negativeLimit) == nil,
+            "negative limit error violated the output schema",
             failures: &failures
         )
 
@@ -434,6 +679,7 @@ private final class ProtocolConnection {
     private var pending = Data()
     private(set) var responses: [[String: Any]] = []
     private(set) var rawLines: [Data] = []
+    var processID: Int32 { process.processIdentifier }
 
     init(serverURL: URL) throws {
         process.executableURL = serverURL

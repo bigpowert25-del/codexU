@@ -324,8 +324,22 @@ public enum ProjectIndexCodec {
             "~/.codex",
             "~/.openclaw"
         ]
-        return !pathMarkers.contains(where: lowered.contains)
+        guard !pathMarkers.contains(where: lowered.contains) else {
+            return false
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        return !credentialExpressions.contains {
+            $0.firstMatch(in: value, range: range) != nil
+        }
     }
+
+    private static let credentialExpressions: [NSRegularExpression] = [
+        #"(?i)(?<![a-z0-9])sk-(?:proj-)?[a-z0-9_-]{16,}"#,
+        #"(?i)(?<![a-z0-9])gh[pousr]_[a-z0-9]{16,}"#,
+        #"(?i)\bAKIA[A-Z0-9]{16}\b"#,
+        #"(?i)\b(?:password|passwd|api[_-]?key|secret|token)\s*[:=]\s*\S+"#,
+        #"(?i)\bbearer\s+[a-z0-9._~-]{12,}"#
+    ].map { try! NSRegularExpression(pattern: $0) }
 
     private static func isPublicCode(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 64 else { return false }

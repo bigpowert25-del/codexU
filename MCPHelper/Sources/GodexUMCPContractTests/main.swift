@@ -47,6 +47,24 @@ struct GodexUMCPContractTests {
             failures.append("unknown-key fixture failed")
         }
 
+        do {
+            var object = try JSONSerialization.jsonObject(with: data)
+                as! [String: Any]
+            var projects = object["projects"] as! [[String: Any]]
+            var tasks = projects[0]["tasks"] as! [[String: Any]]
+            tasks[0]["title"] = "sk-proj-0123456789abcdef0123456789abcdef"
+            projects[0]["tasks"] = tasks
+            object["projects"] = projects
+            let invalid = try JSONSerialization.data(withJSONObject: object)
+            check(
+                (try? ProjectIndexCodec.decode(invalid)) == nil,
+                "credential-shaped title accepted",
+                failures: &failures
+            )
+        } catch {
+            failures.append("credential fixture failed")
+        }
+
         let loader = SequencedLoader([
             .success(sampleIndexData(generatedAt: now)),
             .failure(PublicSnapshotError(code: "fixture_failure"))
@@ -75,6 +93,26 @@ struct GodexUMCPContractTests {
             failures.append("cache fallback failed")
         }
 
+        let concurrentLoader = DelayedLoader(
+            data: sampleIndexData(generatedAt: now)
+        )
+        let concurrentCache = ProjectIndexCache(loader: {
+            try await concurrentLoader.load()
+        })
+        do {
+            async let first = concurrentCache.snapshot(now: now)
+            async let second = concurrentCache.snapshot(now: now)
+            _ = try await (first, second)
+            let callCount = await concurrentLoader.callCount
+            check(
+                callCount == 1,
+                "concurrent cache refresh was not coalesced",
+                failures: &failures
+            )
+        } catch {
+            failures.append("concurrent cache fixture failed")
+        }
+
         let emptyCache = ProjectIndexCache(loader: {
             throw PublicSnapshotError(code: "fixture_failure")
         })
@@ -101,6 +139,16 @@ struct GodexUMCPContractTests {
             )
             check(list.projects.count == 1, "project list", failures: &failures)
             check(list.appliedLimit == 50, "list bound", failures: &failures)
+            check(
+                list.runtimeAvailability.count == 1,
+                "project list dropped runtime availability",
+                failures: &failures
+            )
+            check(
+                list.warnings.isEmpty,
+                "project list warning projection",
+                failures: &failures
+            )
             let pendingList = try service.projects(
                 runtime: nil,
                 state: "pending",
@@ -127,6 +175,11 @@ struct GodexUMCPContractTests {
             check(
                 handoffs.handoffs.count == 1,
                 "handoff list",
+                failures: &failures
+            )
+            check(
+                handoffs.runtimeAvailability.count == 1,
+                "handoff list dropped runtime availability",
                 failures: &failures
             )
             check(
@@ -233,6 +286,55 @@ struct GodexUMCPContractTests {
             failures: &failures
         )
 
+        let escapedRoot = root.appendingPathComponent(
+            "escaped-bundle",
+            isDirectory: true
+        )
+        let escapedHelpers = escapedRoot.appendingPathComponent(
+            "codexU.app/Contents/Helpers",
+            isDirectory: true
+        )
+        let escapedMacOS = escapedRoot.appendingPathComponent(
+            "codexU.app/Contents/MacOS",
+            isDirectory: true
+        )
+        let outsideMacOS = root.appendingPathComponent(
+            "outside-macos",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(
+            at: escapedHelpers,
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: outsideMacOS,
+            withIntermediateDirectories: true
+        )
+        let escapedHelper = escapedHelpers.appendingPathComponent(
+            "GodexUMCPServer"
+        )
+        try Data().write(to: escapedHelper)
+        let outsideApp = outsideMacOS.appendingPathComponent("codexU")
+        try "#!/bin/sh\nexit 0\n".write(
+            to: outsideApp,
+            atomically: true,
+            encoding: .utf8
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: outsideApp.path
+        )
+        try fileManager.createSymbolicLink(
+            at: escapedMacOS,
+            withDestinationURL: outsideMacOS
+        )
+        do {
+            _ = try BundledAppCommand(helperExecutableURL: escapedHelper)
+            failures.append("bundle ancestor symlink was accepted")
+        } catch {
+            // Expected: fixed command discovery may not leave the app bundle.
+        }
+
         try "#!/bin/sh\nwhile :; do :; done\n".write(
             to: appURL,
             atomically: true,
@@ -249,6 +351,32 @@ struct GodexUMCPContractTests {
             check(
                 error.code == "snapshot_timeout",
                 "child timeout error leaked detail",
+                failures: &failures
+            )
+        }
+
+        try "#!/bin/sh\nexec /usr/bin/yes 0123456789abcdef\n".write(
+            to: appURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: appURL.path
+        )
+        let oversizedStart = Date()
+        do {
+            _ = try command.load(timeout: 2)
+            failures.append("unbounded child output was accepted")
+        } catch let error as PublicSnapshotError {
+            check(
+                error.code == "snapshot_too_large",
+                "unbounded child output did not fail at the size limit",
+                failures: &failures
+            )
+            check(
+                Date().timeIntervalSince(oversizedStart) < 1.5,
+                "unbounded child output was not stopped promptly",
                 failures: &failures
             )
         }
@@ -345,5 +473,20 @@ private actor SequencedLoader {
             throw PublicSnapshotError(code: "fixture_exhausted")
         }
         return try results.removeFirst().get()
+    }
+}
+
+private actor DelayedLoader {
+    let data: Data
+    private(set) var callCount = 0
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func load() async throws -> Data {
+        callCount += 1
+        try await Task.sleep(for: .milliseconds(100))
+        return data
     }
 }

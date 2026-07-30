@@ -8,10 +8,17 @@ public actor ProjectIndexCache {
         let loadedAt: Date
     }
 
+    private struct InFlightRefresh {
+        let id: UUID
+        let startedAt: Date
+        let task: Task<ProjectIndex, Error>
+    }
+
     private let loader: Loader
     private let freshTTL: TimeInterval
     private let staleTTL: TimeInterval
     private var cached: CachedSnapshot?
+    private var inFlightRefresh: InFlightRefresh?
 
     public init(
         freshTTL: TimeInterval = 3,
@@ -28,12 +35,38 @@ public actor ProjectIndexCache {
            now.timeIntervalSince(cached.loadedAt) <= freshTTL {
             return cached.index
         }
+
+        let refresh: InFlightRefresh
+        if let inFlightRefresh {
+            refresh = inFlightRefresh
+        } else {
+            let loader = self.loader
+            let created = InFlightRefresh(
+                id: UUID(),
+                startedAt: now,
+                task: Task {
+                    let data = try await loader()
+                    return try ProjectIndexCodec.decode(data)
+                }
+            )
+            inFlightRefresh = created
+            refresh = created
+        }
+
         do {
-            let data = try await loader()
-            let index = try ProjectIndexCodec.decode(data)
-            cached = CachedSnapshot(index: index, loadedAt: now)
+            let index = try await refresh.task.value
+            if inFlightRefresh?.id == refresh.id {
+                cached = CachedSnapshot(
+                    index: index,
+                    loadedAt: refresh.startedAt
+                )
+                inFlightRefresh = nil
+            }
             return index
         } catch {
+            if inFlightRefresh?.id == refresh.id {
+                inFlightRefresh = nil
+            }
             if let cached,
                now.timeIntervalSince(cached.loadedAt) <= staleTTL {
                 return cached.index.withFreshness(.stale)

@@ -38,6 +38,14 @@ enum GodexUProjectIndexReaderSelfTest {
                 at: openClawMemory,
                 withIntermediateDirectories: true
             )
+            try fileManager.createDirectory(
+                at: root.appendingPathComponent(".claude"),
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: root.appendingPathComponent(".hermes"),
+                withIntermediateDirectories: true
+            )
 
             let codexTranscript = codexDirectory.appendingPathComponent(
                 "secret-transcript.jsonl"
@@ -182,7 +190,15 @@ enum GodexUProjectIndexReaderSelfTest {
             }?.status
             check(
                 hermesStatus == .unavailable,
-                "missing Hermes state was not unavailable",
+                "empty Hermes directory was treated as available",
+                failures: &failures
+            )
+            let claudeStatus = index.runtimeAvailability.first {
+                $0.runtime == .claudeCode
+            }?.status
+            check(
+                claudeStatus == .unavailable,
+                "empty Claude directory was treated as available",
                 failures: &failures
             )
         } catch {

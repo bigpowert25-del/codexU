@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct BundledAppCommand: Sendable {
     public let executableURL: URL
@@ -10,19 +11,38 @@ public struct BundledAppCommand: Sendable {
         let helper = helperExecutableURL.standardizedFileURL
         let helpersDirectory = helper.deletingLastPathComponent()
         let contentsDirectory = helpersDirectory.deletingLastPathComponent()
+        let appDirectory = contentsDirectory.deletingLastPathComponent()
         guard helpersDirectory.lastPathComponent == "Helpers",
-              contentsDirectory.lastPathComponent == "Contents"
+              contentsDirectory.lastPathComponent == "Contents",
+              appDirectory.pathExtension == "app"
         else {
             throw PublicSnapshotError(code: "snapshot_command_unavailable")
         }
-        let candidate = contentsDirectory
-            .appendingPathComponent("MacOS", isDirectory: true)
+        let macOSDirectory = contentsDirectory.appendingPathComponent(
+            "MacOS",
+            isDirectory: true
+        )
+        let candidate = macOSDirectory
             .appendingPathComponent("codexU")
             .standardizedFileURL
-        guard fileManager.isExecutableFile(atPath: candidate.path),
-              (try? fileManager.destinationOfSymbolicLink(
-                atPath: candidate.path
-              )) == nil
+        let bundleComponents = [
+            appDirectory,
+            contentsDirectory,
+            helpersDirectory,
+            helper,
+            macOSDirectory,
+            candidate
+        ]
+        guard bundleComponents.allSatisfy({
+            !isSymbolicLink($0, fileManager: fileManager)
+        }),
+        fileManager.isExecutableFile(atPath: candidate.path)
+        else {
+            throw PublicSnapshotError(code: "snapshot_command_unavailable")
+        }
+        let resolvedContents = contentsDirectory.resolvingSymlinksInPath()
+        let resolvedCandidate = candidate.resolvingSymlinksInPath()
+        guard resolvedCandidate.path.hasPrefix(resolvedContents.path + "/")
         else {
             throw PublicSnapshotError(code: "snapshot_command_unavailable")
         }
@@ -51,25 +71,49 @@ public struct BundledAppCommand: Sendable {
         timer.setEventHandler {
             guard process.isRunning else { return }
             timeoutState.markTimedOut()
-            process.terminate()
+            Darwin.kill(process.processIdentifier, SIGKILL)
         }
         timer.resume()
 
-        let data = (try? output.fileHandleForReading.readToEnd()) ?? Data()
+        let maximumOutputBytes = 2 * 1_024 * 1_024
+        var data = Data()
+        var exceededOutputLimit = false
+        while true {
+            let chunk = output.fileHandleForReading.availableData
+            if chunk.isEmpty {
+                break
+            }
+            if data.count + chunk.count > maximumOutputBytes {
+                exceededOutputLimit = true
+                timer.cancel()
+                if process.isRunning {
+                    Darwin.kill(process.processIdentifier, SIGKILL)
+                }
+                break
+            }
+            data.append(chunk)
+        }
         process.waitUntilExit()
         timer.cancel()
 
+        if exceededOutputLimit {
+            throw PublicSnapshotError(code: "snapshot_too_large")
+        }
         if timeoutState.didTimeOut {
             throw PublicSnapshotError(code: "snapshot_timeout")
         }
         guard process.terminationStatus == 0 else {
             throw PublicSnapshotError(code: "snapshot_command_failed")
         }
-        guard data.count <= 2 * 1_024 * 1_024 else {
-            throw PublicSnapshotError(code: "snapshot_too_large")
-        }
         return data
     }
+}
+
+private func isSymbolicLink(
+    _ url: URL,
+    fileManager: FileManager
+) -> Bool {
+    (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil
 }
 
 private final class TimeoutState: @unchecked Sendable {

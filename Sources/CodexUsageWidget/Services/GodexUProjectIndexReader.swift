@@ -30,6 +30,15 @@ struct GodexUProjectIndexReader {
         let codex = readCodexTasks()
         let openClaw = readOpenClawTasks()
         let envelopes = readHandoffs()
+        let claudeAvailable = firstExistingURL([
+            homeDirectory.appendingPathComponent(".claude/projects"),
+            homeDirectory.appendingPathComponent(
+                ".claude/stats-cache.json"
+            )
+        ]) != nil
+        let hermesAvailable = firstExistingURL([
+            homeDirectory.appendingPathComponent(".hermes/state.db")
+        ]) != nil
         var warnings: [GodexUIndexWarning] = []
         if !codex.sourceAvailable {
             warnings.append(GodexUIndexWarning(
@@ -39,6 +48,16 @@ struct GodexUProjectIndexReader {
         if !openClaw.sourceAvailable {
             warnings.append(GodexUIndexWarning(
                 code: "openclaw_metadata_unavailable"
+            ))
+        }
+        if !claudeAvailable {
+            warnings.append(GodexUIndexWarning(
+                code: "claude_metadata_unavailable"
+            ))
+        }
+        if !hermesAvailable {
+            warnings.append(GodexUIndexWarning(
+                code: "hermes_metadata_unavailable"
             ))
         }
 
@@ -58,13 +77,13 @@ struct GodexUProjectIndexReader {
                 ),
                 GodexURuntimeAvailability(
                     runtime: .claudeCode,
-                    status: directoryExists(".claude")
+                    status: claudeAvailable
                         ? .localOnly
                         : .unavailable
                 ),
                 GodexURuntimeAvailability(
                     runtime: .hermes,
-                    status: directoryExists(".hermes")
+                    status: hermesAvailable
                         ? .localOnly
                         : .unavailable
                 )
@@ -375,15 +394,6 @@ struct GodexUProjectIndexReader {
             return Int(text) ?? 0
         }
         return 0
-    }
-
-    private func directoryExists(_ relativePath: String) -> Bool {
-        var isDirectory: ObjCBool = false
-        let path = homeDirectory.appendingPathComponent(relativePath).path
-        return fileManager.fileExists(
-            atPath: path,
-            isDirectory: &isDirectory
-        ) && isDirectory.boolValue
     }
 
     private func firstExistingURL(_ candidates: [URL]) -> URL? {

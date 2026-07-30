@@ -7,6 +7,7 @@ enum GodexUProjectIndexSelfTest {
         let projectID = AgentProjectWorkspaceBuilder.projectID(
             forDerivedName: "Workspace"
         )
+        let credential = "sk-proj-0123456789abcdef0123456789abcdef"
         let index = GodexUProjectIndex.make(
             generatedAt: now,
             freshness: .fresh,
@@ -23,7 +24,7 @@ enum GodexUProjectIndexSelfTest {
             tasks: [
                 GodexUProjectIndexTaskInput(
                     nativeID: "raw-thread-secret",
-                    title: "  Safe task title  ",
+                    title: "  Safe task title \(credential)  ",
                     projectName: "Workspace",
                     sourceRuntime: .codex,
                     state: .active,
@@ -66,6 +67,11 @@ enum GodexUProjectIndexSelfTest {
             check(
                 !text.contains("raw-thread-secret"),
                 "raw native task ID leaked",
+                failures: &failures
+            )
+            check(
+                !text.contains(credential) && text.contains("[secret]"),
+                "credential-shaped title was not redacted",
                 failures: &failures
             )
             check(

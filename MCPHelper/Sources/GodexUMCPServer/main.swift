@@ -53,6 +53,13 @@ struct GodexUMCPServerMain {
             ListTools.Result(tools: tools)
         }
         await server.withMethodHandler(CallTool.self) { parameters in
+            guard Set([
+                "godexu_project_list",
+                "godexu_project_get",
+                "godexu_handoff_list"
+            ]).contains(parameters.name) else {
+                throw MCPError.invalidParams("tool_not_found")
+            }
             do {
                 let index = try await cache.snapshot()
                 let service = ProjectIndexQueryService(index: index)
@@ -101,7 +108,7 @@ struct GodexUMCPServerMain {
                     )
                     return try toolResult(result)
                 default:
-                    return errorToolResult(code: "tool_not_found")
+                    throw PublicSnapshotError(code: "tool_not_found")
                 }
             } catch let error as PublicSnapshotError {
                 return errorToolResult(code: error.code)
@@ -216,6 +223,42 @@ struct GodexUMCPServerMain {
     private static let runtimeOutputSchema: Value = [
         "type": "string",
         "enum": ["codex", "openClaw", "claudeCode", "hermes"]
+    ]
+
+    private static let runtimeAvailabilitySchema: Value = [
+        "type": "array",
+        "maxItems": 4,
+        "items": [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "runtime": runtimeOutputSchema,
+                "status": [
+                    "type": "string",
+                    "enum": [
+                        "available",
+                        "localOnly",
+                        "snapshotNeeded",
+                        "stale",
+                        "unavailable"
+                    ]
+                ]
+            ],
+            "required": ["runtime", "status"]
+        ]
+    ]
+
+    private static let warningsSchema: Value = [
+        "type": "array",
+        "maxItems": 32,
+        "items": [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "code": ["type": "string", "maxLength": 64]
+            ],
+            "required": ["code"]
+        ]
     ]
 
     private static let countSchema: Value = [
@@ -351,6 +394,8 @@ struct GodexUMCPServerMain {
         "properties": [
             "generatedAt": dateSchema,
             "freshness": freshnessSchema,
+            "runtimeAvailability": runtimeAvailabilitySchema,
+            "warnings": warningsSchema,
             "appliedLimit": [
                 "type": "integer",
                 "minimum": 1,
@@ -365,6 +410,8 @@ struct GodexUMCPServerMain {
         "required": [
             "generatedAt",
             "freshness",
+            "runtimeAvailability",
+            "warnings",
             "appliedLimit",
             "projects"
         ]
@@ -376,6 +423,8 @@ struct GodexUMCPServerMain {
         "properties": [
             "generatedAt": dateSchema,
             "freshness": freshnessSchema,
+            "runtimeAvailability": runtimeAvailabilitySchema,
+            "warnings": warningsSchema,
             "appliedLimit": [
                 "type": "integer",
                 "minimum": 1,
@@ -390,6 +439,8 @@ struct GodexUMCPServerMain {
         "required": [
             "generatedAt",
             "freshness",
+            "runtimeAvailability",
+            "warnings",
             "appliedLimit",
             "handoffs"
         ]
@@ -510,11 +561,6 @@ struct GodexUMCPServerMain {
                     annotations: nil,
                     _meta: nil
                 )
-            ],
-            structuredContent: [
-                "error": [
-                    "code": .string(code)
-                ]
             ],
             isError: true
         )

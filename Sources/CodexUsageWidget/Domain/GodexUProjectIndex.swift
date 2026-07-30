@@ -285,7 +285,19 @@ struct GodexUProjectIndex: Codable, Equatable {
             .map(String.init)
             .map(redactedToken)
             .joined(separator: " ")
-        return String(normalized.prefix(limit))
+        let redacted = credentialExpressions.reduce(normalized) {
+            partial, expression in
+            let range = NSRange(
+                partial.startIndex..<partial.endIndex,
+                in: partial
+            )
+            return expression.stringByReplacingMatches(
+                in: partial,
+                range: range,
+                withTemplate: "[secret]"
+            )
+        }
+        return String(redacted.prefix(limit))
     }
 
     private static func redactedToken(_ token: String) -> String {
@@ -316,6 +328,14 @@ struct GodexUProjectIndex: Codable, Equatable {
     private static let uuidExpression = try! NSRegularExpression(
         pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
     )
+
+    private static let credentialExpressions: [NSRegularExpression] = [
+        #"(?i)(?<![a-z0-9])sk-(?:proj-)?[a-z0-9_-]{16,}"#,
+        #"(?i)(?<![a-z0-9])gh[pousr]_[a-z0-9]{16,}"#,
+        #"(?i)\bAKIA[A-Z0-9]{16}\b"#,
+        #"(?i)\b(?:password|passwd|api[_-]?key|secret|token)\s*[:=]\s*\S+"#,
+        #"(?i)\bbearer\s+[a-z0-9._~-]{12,}"#
+    ].map { try! NSRegularExpression(pattern: $0) }
 
     private static func stableIdentifier(_ value: String) -> String {
         var hash: UInt64 = 14_695_981_039_346_656_037

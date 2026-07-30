@@ -17,6 +17,8 @@ public struct ProjectListItem: Codable, Equatable, Sendable {
 public struct ProjectListResult: Codable, Equatable, Sendable {
     public let generatedAt: Date
     public let freshness: IndexFreshness
+    public let runtimeAvailability: [RuntimeAvailability]
+    public let warnings: [IndexWarning]
     public let appliedLimit: Int
     public let projects: [ProjectListItem]
 }
@@ -24,6 +26,8 @@ public struct ProjectListResult: Codable, Equatable, Sendable {
 public struct HandoffListResult: Codable, Equatable, Sendable {
     public let generatedAt: Date
     public let freshness: IndexFreshness
+    public let runtimeAvailability: [RuntimeAvailability]
+    public let warnings: [IndexWarning]
     public let appliedLimit: Int
     public let handoffs: [Handoff]
 }
@@ -64,6 +68,8 @@ public struct ProjectIndexQueryService: Sendable {
         return ProjectListResult(
             generatedAt: index.generatedAt,
             freshness: index.freshness,
+            runtimeAvailability: index.runtimeAvailability,
+            warnings: index.warnings,
             appliedLimit: appliedLimit,
             projects: Array(filtered.prefix(appliedLimit)).map {
                 ProjectListItem(
@@ -110,6 +116,8 @@ public struct ProjectIndexQueryService: Sendable {
         return HandoffListResult(
             generatedAt: index.generatedAt,
             freshness: index.freshness,
+            runtimeAvailability: index.runtimeAvailability,
+            warnings: index.warnings,
             appliedLimit: appliedLimit,
             handoffs: Array(filtered.prefix(appliedLimit))
         )

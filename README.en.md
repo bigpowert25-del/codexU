@@ -43,8 +43,10 @@ progress, counts, and local runtime availability. It does not read or emit
 conversation bodies, prompts, recent replies, tool arguments, handoff notes,
 raw thread/session IDs, rollout paths, database paths, SSH details, or
 credentials. A successful snapshot may be reused from memory for up to three
-seconds; when no cache is available, the helper returns a bounded error instead
-of inventing empty data.
+seconds. If a refresh fails, the last successful snapshot may be returned for
+up to 15 minutes with explicit `stale` freshness; after that bound, or when no
+cache exists, the helper returns a bounded error instead of inventing empty
+data.
 
 For a temporary manual connection, developers can use the following snippet as
 a reference and replace the path with their own build. The project does not
