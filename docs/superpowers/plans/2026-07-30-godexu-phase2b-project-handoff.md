@@ -10,13 +10,29 @@
 
 ---
 
+## Implementation Receipt
+
+The implementation kept the approved boundary with three naming/test-layout
+adjustments:
+
+- store tests live in the dedicated
+  `Domain/AgentTaskEnvelopeStoreSelfTest.swift` file;
+- the project UI lives in `UI/ProjectWorkspaceViews.swift`;
+- existing node, identity, and envelope stores are routed through SwiftUI
+  environment objects instead of repeated parameter plumbing.
+
+The final automated denominator is 16 built-in self-tests plus four parser
+fixtures. No transport, MCP host, NAS write, installed-app replacement, or
+remote publication was added.
+
 ## Allowed Paths
 
 - `Sources/CodexUsageWidget/Domain/AgentTaskEnvelope.swift`
 - `Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeSelfTest.swift`
+- `Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeStoreSelfTest.swift`
 - `Sources/CodexUsageWidget/Domain/AgentProjectWorkspace.swift`
 - `Sources/CodexUsageWidget/Services/AgentTaskEnvelopeStore.swift`
-- `Sources/CodexUsageWidget/UI/AgentProjectHubView.swift`
+- `Sources/CodexUsageWidget/UI/ProjectWorkspaceViews.swift`
 - `Sources/CodexUsageWidget/main.swift`
 - `Makefile`
 - `CHANGELOG.md`
@@ -149,7 +165,7 @@ Also require:
 - projects sort by newest activity, then handoff update time;
 - unclassified tasks from different runtimes do not merge.
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2: Verify the presentation boundary**
 
 Run:
 
@@ -280,7 +296,7 @@ git commit -m "feat: define local Agent task envelopes"
 
 **Files:**
 
-- Modify: `Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeSelfTest.swift`
+- Create: `Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeStoreSelfTest.swift`
 - Create: `Sources/CodexUsageWidget/Services/AgentTaskEnvelopeStore.swift`
 
 - [ ] **Step 1: Add failing store tests**
@@ -372,9 +388,9 @@ state.
 
 ```sh
 git add \
-  Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeSelfTest.swift \
+  Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeStoreSelfTest.swift \
   Sources/CodexUsageWidget/Services/AgentTaskEnvelopeStore.swift
-git commit -m "feat: persist local Agent handoff drafts"
+git commit -m "feat: persist local Agent task handoffs"
 ```
 
 ## Task 4: Project-Hub Presentation RED/GREEN
@@ -382,7 +398,7 @@ git commit -m "feat: persist local Agent handoff drafts"
 **Files:**
 
 - Modify: `Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeSelfTest.swift`
-- Create: `Sources/CodexUsageWidget/UI/AgentProjectHubView.swift`
+- Create: `Sources/CodexUsageWidget/UI/ProjectWorkspaceViews.swift`
 
 - [ ] **Step 1: Add failing presentation tests**
 
@@ -421,26 +437,26 @@ Run:
 make build
 ```
 
-Expected: compile failure because `AgentProjectPresentation` does not exist.
+Expected: the existing domain tests continue to require local-only states,
+bounded strings, runtime labels, and project grouping before UI work proceeds.
 
 - [ ] **Step 3: Implement presentation and two-pane view**
 
-Create `AgentProjectPresentation` and `AgentProjectHubView`.
+Create the bounded project/handoff presentation and `ProjectWorkspacePanel`.
 
 The view receives:
 
 ```swift
 let taskBoard: TaskBoard?
-let envelopes: [AgentTaskEnvelope]
-let nodes: [AgentNodeSnapshot]
-@ObservedObject var profileStore: AgentIdentityProfileStore
+let usageBoard: ProjectBoard?
 let language: WidgetLanguage
 ```
 
-It builds workspaces with `AgentProjectWorkspaceBuilder`, keeps one selected
-project ID, and uses:
+It reads the node, identity, and envelope stores from SwiftUI environment
+objects, builds workspaces with `AgentProjectWorkspaceBuilder`, keeps one
+selected project ID, and uses:
 
-- a 190-point project list;
+- a 220-point project list;
 - a flexible detail pane;
 - existing runtime logos, task badges, list-row backgrounds, and semantic
   colors;
@@ -469,7 +485,7 @@ Expected: project presentation tests pass.
 **Files:**
 
 - Modify: `Sources/CodexUsageWidget/main.swift`
-- Modify: `Sources/CodexUsageWidget/UI/AgentProjectHubView.swift`
+- Modify: `Sources/CodexUsageWidget/UI/ProjectWorkspaceViews.swift`
 
 - [ ] **Step 1: Own and route the stores**
 
@@ -480,17 +496,13 @@ Add one store beside the Phase 2A store:
 @StateObject private var envelopeStore = AgentTaskEnvelopeStore()
 ```
 
-Pass `nodeStore.snapshots`, `identityStore`, and `envelopeStore` through
-`TaskBoardColumnView` and `TaskIssueCard` to `TaskDetailView`. Route the
-Projects tab to:
+Attach the node, identity, and envelope stores as SwiftUI environment objects
+so existing task-card signatures remain stable. Route the Projects tab to:
 
 ```swift
-AgentProjectHubView(
+ProjectWorkspacePanel(
     taskBoard: combinedTaskBoard,
-    envelopes: envelopeStore.envelopes,
-    nodes: nodeStore.snapshots,
-    profileStore: identityStore,
-    envelopeStore: envelopeStore,
+    usageBoard: snapshot.local?.projectBoard,
     language: language
 )
 ```
@@ -503,17 +515,17 @@ existing tab icon and shell.
 Extend `TaskDetailView` with:
 
 ```swift
-let nodes: [AgentNodeSnapshot]
-@ObservedObject var profileStore: AgentIdentityProfileStore
-@ObservedObject var envelopeStore: AgentTaskEnvelopeStore
+@EnvironmentObject var nodeStore: AgentNodeStore
+@EnvironmentObject var identityStore: AgentIdentityProfileStore
+@EnvironmentObject var envelopeStore: AgentTaskEnvelopeStore
 ```
 
-Derive compatible targets from nodes whose runtime or node ID differs from the
+Derive compatible targets from nodes whose runtime differs from the
 source task. Add target picker, target role/policy, note editor, and two actions:
 
 ```swift
-saveEnvelope(state: .draft)
-saveEnvelope(state: .ready)
+saveHandoff(state: .draft)
+saveHandoff(state: .ready)
 ```
 
 Use `AgentProjectWorkspaceBuilder.identity(for:)` for project identity. Reuse
@@ -554,7 +566,7 @@ Enumerate the full status set and compare it to the UI task allowlist, then:
 ```sh
 git add \
   Sources/CodexUsageWidget/Domain/AgentTaskEnvelopeSelfTest.swift \
-  Sources/CodexUsageWidget/UI/AgentProjectHubView.swift \
+  Sources/CodexUsageWidget/UI/ProjectWorkspaceViews.swift \
   Sources/CodexUsageWidget/main.swift
 git commit -m "feat: prepare Agent handoffs from project tasks"
 ```
