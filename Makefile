@@ -30,7 +30,7 @@ else
 CODESIGN_FLAGS := --force --deep --options runtime --timestamp --sign "$(SIGN_IDENTITY)" $(CODESIGN_EXTRA_FLAGS)
 endif
 
-.PHONY: build build-mcp-helper run probe test-rate-limits test-statistics-time-zone test-particle-animation test-display-surface test-workbench-preferences test-task-navigation test-local-system test-agent-selection test-agent-nodes test-agent-identity test-task-envelopes test-task-envelope-store test-codex-token-events test-project-index test-mcp-helper test-dynamic-island test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
+.PHONY: build build-mcp-helper run probe test-rate-limits test-statistics-time-zone test-particle-animation test-display-surface test-workbench-preferences test-task-navigation test-local-system test-agent-selection test-agent-nodes test-agent-identity test-task-envelopes test-task-envelope-store test-task-delivery-package test-codex-token-events test-project-index test-mcp-helper test-dynamic-island test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
 
 build-mcp-helper:
 	swift build --package-path "$(MCP_HELPER_PACKAGE)" -c release --triple "$(TARGET_TRIPLE)" --product "$(MCP_HELPER_PRODUCT)"
@@ -96,6 +96,9 @@ test-task-envelopes: build
 
 test-task-envelope-store: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-envelope-store
+
+test-task-delivery-package: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-delivery-package
 
 test-codex-token-events: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-codex-token-events

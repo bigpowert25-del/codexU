@@ -3521,6 +3521,7 @@ struct UsageWidgetView: View {
     @StateObject private var nodeStore = AgentNodeStore()
     @StateObject private var identityStore = AgentIdentityProfileStore()
     @StateObject private var envelopeStore = AgentTaskEnvelopeStore()
+    @StateObject private var deliveryOutbox = AgentTaskDeliveryOutbox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -3578,6 +3579,7 @@ struct UsageWidgetView: View {
         .readableForegroundHierarchy(effectiveColorScheme)
         .environmentObject(nodeStore)
         .environmentObject(envelopeStore)
+        .environmentObject(deliveryOutbox)
         .environmentObject(identityStore)
         .onAppear {
             themeMode.applyAppearance()
@@ -8767,12 +8769,15 @@ struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nodeStore: AgentNodeStore
     @EnvironmentObject private var envelopeStore: AgentTaskEnvelopeStore
+    @EnvironmentObject private var deliveryOutbox: AgentTaskDeliveryOutbox
     @EnvironmentObject private var identityStore: AgentIdentityProfileStore
     @State private var openErrorMessage: String?
     @State private var selectedTargetNodeID = ""
     @State private var handoffNote = ""
     @State private var handoffFeedback: String?
     @State private var handoffFeedbackIsError = false
+    @State private var deliveryFeedback: String?
+    @State private var deliveryFeedbackIsError = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -9050,6 +9055,54 @@ struct TaskDetailView: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
+
+                if selectedEnvelope?.state == .ready {
+                    Divider()
+                    HStack(spacing: 8) {
+                        if selectedDeliveryPackage == nil {
+                            Button(
+                                language.text(
+                                    "生成本机投递包",
+                                    "Prepare local delivery package"
+                                )
+                            ) {
+                                prepareDeliveryPackage()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        } else {
+                            Label(
+                                language.text(
+                                    "待人工发送",
+                                    "Awaiting manual send"
+                                ),
+                                systemImage: "shippingbox.fill"
+                            )
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(WidgetPalette.statusWarning)
+
+                            Button(
+                                language.text(
+                                    "取消投递包",
+                                    "Cancel package"
+                                )
+                            ) {
+                                cancelDeliveryPackage()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    Text(language.text(
+                        "只写入本机待投递箱，不会连接或发送到 NAS、OpenClaw 或 Hermes。",
+                        "Writes only to the local outbox. It does not connect or send to NAS, OpenClaw, or Hermes."
+                    ))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if let handoffFeedback {
@@ -9062,6 +9115,22 @@ struct TaskDetailView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(
                     handoffFeedbackIsError
+                        ? WidgetPalette.statusDanger
+                        : WidgetPalette.statusSuccess
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let deliveryFeedback {
+                Label(
+                    deliveryFeedback,
+                    systemImage: deliveryFeedbackIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "shippingbox.fill"
+                )
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(
+                    deliveryFeedbackIsError
                         ? WidgetPalette.statusDanger
                         : WidgetPalette.statusSuccess
                 )
@@ -9111,6 +9180,24 @@ struct TaskDetailView: View {
         )
     }
 
+    private var selectedEnvelope: AgentTaskEnvelope? {
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        return envelopeStore.envelopes
+            .filter {
+                $0.sourceTaskID == sourceTaskID
+                    && $0.targetNodeID == selectedTargetNodeID
+            }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
+    private var selectedDeliveryPackage: AgentTaskDeliveryPackage? {
+        guard let selectedEnvelope else { return nil }
+        return deliveryOutbox.package(
+            for: selectedEnvelope.id,
+            revision: selectedEnvelope.revision
+        )
+    }
+
     private func loadHandoffDraft() {
         let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
         let existing = envelopeStore.envelopes
@@ -9128,6 +9215,8 @@ struct TaskDetailView: View {
     private func saveHandoff(state: AgentTaskEnvelopeState) {
         handoffFeedback = nil
         handoffFeedbackIsError = false
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
         guard let target = targetNodes.first(where: {
             $0.id == selectedTargetNodeID
         }) else {
@@ -9181,6 +9270,10 @@ struct TaskDetailView: View {
         }
 
         do {
+            if let existingPackage = deliveryOutbox.package(for: envelope.id),
+               existingPackage.envelope != envelope {
+                try deliveryOutbox.cancel(envelopeID: envelope.id)
+            }
             try envelopeStore.upsert(envelope)
             handoffNote = envelope.handoffNote
             handoffFeedback = localHandoffSavedMessage(state)
@@ -9190,6 +9283,51 @@ struct TaskDetailView: View {
                 "Could not save the local handoff draft. Try again."
             )
             handoffFeedbackIsError = true
+        }
+    }
+
+    private func prepareDeliveryPackage() {
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
+        guard let envelope = selectedEnvelope, envelope.state == .ready else {
+            deliveryFeedback = language.text(
+                "请先把交接标记为本机就绪。",
+                "Mark the handoff locally ready first."
+            )
+            deliveryFeedbackIsError = true
+            return
+        }
+        do {
+            _ = try deliveryOutbox.prepare(envelope: envelope)
+            deliveryFeedback = language.text(
+                "已进入本机待投递箱，尚未发送。",
+                "Added to the local outbox. It has not been sent."
+            )
+        } catch {
+            deliveryFeedback = language.text(
+                "无法生成本机投递包，请检查交接内容后重试。",
+                "Could not prepare the local package. Review the handoff and try again."
+            )
+            deliveryFeedbackIsError = true
+        }
+    }
+
+    private func cancelDeliveryPackage() {
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
+        guard let envelope = selectedEnvelope else { return }
+        do {
+            try deliveryOutbox.cancel(envelopeID: envelope.id)
+            deliveryFeedback = language.text(
+                "本机投递包已取消，交接仍保留为本机就绪。",
+                "Local package cancelled. The handoff remains locally ready."
+            )
+        } catch {
+            deliveryFeedback = language.text(
+                "无法取消本机投递包，请稍后重试。",
+                "Could not cancel the local package. Try again."
+            )
+            deliveryFeedbackIsError = true
         }
     }
 
@@ -11273,6 +11411,10 @@ struct codexUMain {
 
         if CommandLine.arguments.contains("--self-test-task-envelope-store") {
             exit(AgentTaskEnvelopeStoreSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-task-delivery-package") {
+            exit(AgentTaskDeliveryPackageSelfTest.run() ? 0 : 1)
         }
 
         if CommandLine.arguments.contains("--self-test-codex-token-events") {

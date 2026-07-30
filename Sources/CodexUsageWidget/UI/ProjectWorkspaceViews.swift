@@ -319,6 +319,7 @@ private struct ProjectHandoffOverviewRow: View {
     let target: AgentNodeSnapshot?
     @ObservedObject var identityStore: AgentIdentityProfileStore
     let language: WidgetLanguage
+    @EnvironmentObject private var deliveryOutbox: AgentTaskDeliveryOutbox
 
     private var identity: AgentIdentityPresentation? {
         guard let target else { return nil }
@@ -386,6 +387,12 @@ private struct ProjectHandoffOverviewRow: View {
     }
 
     private var stateText: String {
+        if deliveryOutbox.package(
+            for: envelope.id,
+            revision: envelope.revision
+        ) != nil {
+            return language.text("待人工发送", "Awaiting manual send")
+        }
         switch envelope.state {
         case .draft:
             return language.text("草稿", "Draft")
