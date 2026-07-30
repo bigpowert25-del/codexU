@@ -3286,6 +3286,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var workbenchSkin: GodexUSkin {
+        didSet {
+            workbenchSkin.persist(defaults: defaults)
+        }
+    }
+
+    @Published var workbenchStage: GodexUWorkbenchStage {
+        didSet {
+            workbenchStage.persist(defaults: defaults)
+        }
+    }
+
     @Published var particleAnimationMode: ParticleAnimationMode {
         didSet {
             particleAnimationMode.persist(defaults: defaults)
@@ -3350,6 +3362,8 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         language = WidgetLanguage.storedOrAutomatic(defaults: defaults)
         themeMode = WidgetThemeMode.storedOrAutomatic(defaults: defaults)
+        workbenchSkin = GodexUSkin.storedOrDefault(defaults: defaults)
+        workbenchStage = GodexUWorkbenchStage.storedOrDefault(defaults: defaults)
         particleAnimationMode = ParticleAnimationMode.storedOrDefault(defaults: defaults)
         displaySurfaceMode = DisplaySurfaceMode.storedOrDefault(defaults: defaults)
         keepMainWindowOnTop = defaults.bool(forKey: Self.keepMainWindowOnTopKey)
@@ -3527,6 +3541,13 @@ struct UsageWidgetView: View {
     private var effectiveColorScheme: ColorScheme {
         themeMode.preferredColorScheme ?? colorScheme
     }
+    private var workbenchOverview: GodexUWorkbenchOverview {
+        return GodexUWorkbenchOverview.make(
+            officialTrend: snapshot.cloudUsageTrend,
+            taskBoard: combinedTaskBoard,
+            nodes: nodeStore.snapshots
+        )
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -3590,16 +3611,29 @@ struct UsageWidgetView: View {
         VStack(alignment: .leading, spacing: 12) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
+                    GodexUWorkbenchHeader(settings: settings)
+                    GodexUCoreOverviewStrip(
+                        overview: workbenchOverview,
+                        stage: settings.workbenchStage,
+                        skin: settings.workbenchSkin,
+                        language: language
+                    )
                     if shouldShowEnvironmentChecklist {
                         environmentChecklistSection
                     }
                     usageOverviewSection
-                    LocalSystemStatusStrip(snapshot: systemMonitor.snapshot, language: language)
-                    AgentNodeStatusSection(
-                        profileStore: identityStore,
-                        snapshots: nodeStore.snapshots,
-                        language: language
+                    LocalSystemStatusStrip(
+                        snapshot: systemMonitor.snapshot,
+                        language: language,
+                        isCompact: settings.workbenchStage.usesCompactSystemStatus
                     )
+                    if settings.workbenchStage.showsAgentNodes {
+                        AgentNodeStatusSection(
+                            profileStore: identityStore,
+                            snapshots: nodeStore.snapshots,
+                            language: language
+                        )
+                    }
                     dashboardTabsSection
                 }
                 .padding(.bottom, 2)
@@ -4235,6 +4269,39 @@ struct SettingsPanelView: View {
                             ],
                             width: 190
                         )
+                    }
+
+                    SettingsPickerRow(
+                        title: language.text("工作台档位", "Workbench stage"),
+                        detail: language.text(
+                            "轻览、协同或完整指挥视图",
+                            "Light, Sync, or full Command view"
+                        )
+                    ) {
+                        SettingsSegmentedControl(
+                            selection: $settings.workbenchStage,
+                            options: GodexUWorkbenchStage.allCases.map {
+                                SettingsSegmentOption(
+                                    value: $0,
+                                    title: $0.displayName(language: language)
+                                )
+                            },
+                            width: 220
+                        )
+                    }
+
+                    SettingsPickerRow(
+                        title: language.text("工作台皮肤", "Workbench skin"),
+                        detail: language.text(
+                            "默认钛金工作室；只改变视觉，不改变数据或权限",
+                            "Titanium Studio by default; visual only"
+                        )
+                    ) {
+                        GodexUSkinMenu(
+                            selection: $settings.workbenchSkin,
+                            language: language
+                        )
+                        .frame(width: 220, alignment: .trailing)
                     }
 
                     SettingsPickerRow(
@@ -11028,6 +11095,10 @@ struct codexUMain {
 
         if CommandLine.arguments.contains("--self-test-display-surface") {
             exit(DisplaySurfaceModeSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-workbench-preferences") {
+            exit(GodexUWorkbenchPreferencesSelfTest.run() ? 0 : 1)
         }
 
         if CommandLine.arguments.contains("--self-test-rate-limits") {
