@@ -48,6 +48,10 @@ enum AgentProjectWorkspaceBuilder {
         "project-\(stableIdentifier(name))"
     }
 
+    static func sourceTaskID(for item: TaskItem) -> String {
+        "task-\(stableIdentifier("\(item.source.runtimeId):\(item.id)"))"
+    }
+
     static func make(
         taskBoard: TaskBoard?,
         envelopes: [AgentTaskEnvelope]

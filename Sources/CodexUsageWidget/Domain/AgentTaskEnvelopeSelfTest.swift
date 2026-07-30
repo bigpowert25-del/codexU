@@ -179,6 +179,16 @@ enum AgentTaskEnvelopeSelfTest {
             check(
                 openClawWorkspace?.identity.id != hermesWorkspace?.identity.id,
                 "unclassified runtimes should not merge"
+            ),
+            check(
+                AgentProjectWorkspaceBuilder.sourceTaskID(for: activeTask)
+                    == AgentProjectWorkspaceBuilder.sourceTaskID(for: activeTask),
+                "source task IDs should be stable"
+            ),
+            check(
+                AgentProjectWorkspaceBuilder.sourceTaskID(for: activeTask)
+                    != AgentProjectWorkspaceBuilder.sourceTaskID(for: doneTask),
+                "different tasks should keep different source IDs"
             )
         ]
 

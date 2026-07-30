@@ -3505,6 +3505,7 @@ struct UsageWidgetView: View {
     @StateObject private var systemMonitor = LocalSystemMonitor()
     @StateObject private var nodeStore = AgentNodeStore()
     @StateObject private var identityStore = AgentIdentityProfileStore()
+    @StateObject private var envelopeStore = AgentTaskEnvelopeStore()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -3543,7 +3544,9 @@ struct UsageWidgetView: View {
             themeMode.applyAppearance()
             systemMonitor.start()
             nodeStore.start(codexRuntime: store.runtimeSnapshot(for: .codex))
-            store.setTaskBoardSelected(selectedDashboardTab == .tasks)
+            store.setTaskBoardSelected(
+                selectedDashboardTab == .tasks || selectedDashboardTab == .projects
+            )
         }
         .onDisappear {
             systemMonitor.stop()
@@ -3554,7 +3557,7 @@ struct UsageWidgetView: View {
             nodeStore.updateLocalCodex(store.runtimeSnapshot(for: .codex))
         }
         .onChange(of: selectedDashboardTab) { _, tab in
-            store.setTaskBoardSelected(tab == .tasks)
+            store.setTaskBoardSelected(tab == .tasks || tab == .projects)
         }
     }
 
@@ -3606,6 +3609,9 @@ struct UsageWidgetView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 14)
+        .environmentObject(nodeStore)
+        .environmentObject(envelopeStore)
+        .environmentObject(identityStore)
     }
 
     private var environmentChecklistSection: some View {
@@ -3777,8 +3783,9 @@ struct UsageWidgetView: View {
                 language: language
             )
         case .projects:
-            ProjectBoardPanel(
-                projectBoard: snapshot.local?.projectBoard,
+            ProjectWorkspacePanel(
+                taskBoard: combinedTaskBoard,
+                usageBoard: snapshot.local?.projectBoard,
                 language: language
             )
         case .skills:
@@ -3831,9 +3838,17 @@ struct UsageWidgetView: View {
             let quality = sourceQualityText(trend.sourceQuality, language: language)
             return language.text("\(trend.activeDayCount) 活跃日 · \(quality)", "\(trend.activeDayCount) active days · \(quality)")
         case .projects:
-            let activeCount = snapshot.local?.projectBoard?.recentProjects.count ?? 0
-            let totalCount = snapshot.local?.projectBoard?.allProjects.count ?? 0
-            return language.text("\(activeCount) 活跃项目 · \(totalCount) 全部", "\(activeCount) active projects · \(totalCount) total")
+            let workspaces = AgentProjectWorkspaceBuilder.make(
+                taskBoard: combinedTaskBoard,
+                envelopes: envelopeStore.envelopes
+            )
+            let handoffCount = workspaces.reduce(0) {
+                $0 + $1.envelopes.count
+            }
+            return language.text(
+                "\(workspaces.count) 项目 · \(handoffCount) 本地交接",
+                "\(workspaces.count) projects · \(handoffCount) local handoffs"
+            )
         case .skills:
             let skillCount = snapshot.local?.skillUsages.count ?? 0
             let toolCount = snapshot.local?.toolUsages.count ?? 0
@@ -8562,7 +8577,14 @@ struct TaskDetailView: View {
     let item: TaskItem
     let language: WidgetLanguage
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nodeStore: AgentNodeStore
+    @EnvironmentObject private var envelopeStore: AgentTaskEnvelopeStore
+    @EnvironmentObject private var identityStore: AgentIdentityProfileStore
     @State private var openErrorMessage: String?
+    @State private var selectedTargetNodeID = ""
+    @State private var handoffNote = ""
+    @State private var handoffFeedback: String?
+    @State private var handoffFeedbackIsError = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -8633,6 +8655,7 @@ struct TaskDetailView: View {
                         text: item.summary ?? language.text("暂无摘要", "No summary available")
                     )
                     taskProgressSection
+                    handoffEditorSection
                     taskDetailSection(
                         title: language.text("最近回复", "Latest reply"),
                         systemName: "bubble.left.and.bubble.right.fill",
@@ -8643,7 +8666,13 @@ struct TaskDetailView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 560, maxWidth: 560, minHeight: 380, maxHeight: 560, alignment: .topLeading)
+        .frame(minWidth: 600, maxWidth: 600, minHeight: 420, maxHeight: 640, alignment: .topLeading)
+        .onAppear {
+            loadHandoffDraft()
+        }
+        .onChange(of: targetNodes.map(\.id)) { _, _ in
+            loadHandoffDraft()
+        }
     }
 
     private func openInCodex(_ target: TaskNavigationTarget) {
@@ -8738,6 +8767,266 @@ struct TaskDetailView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(language.text("完成进度", "Progress"))
         .accessibilityValue(progressText + "，" + note)
+    }
+
+    private var handoffEditorSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Label(
+                    language.text("交给另一个 Agent", "Handoff to another Agent"),
+                    systemImage: "arrow.triangle.branch"
+                )
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Text(language.text("仅保存在本机", "Local only"))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if targetNodes.isEmpty {
+                Text(language.text(
+                    "尚未发现可选的 OpenClaw、Claude Code 或 Hermes 节点。",
+                    "No OpenClaw, Claude Code, or Hermes node is available yet."
+                ))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Picker(
+                    language.text("目标 Agent", "Target Agent"),
+                    selection: $selectedTargetNodeID
+                ) {
+                    ForEach(targetNodes) { node in
+                        Text(
+                            "\(node.descriptor.displayName) · \(node.descriptor.deviceName)"
+                        )
+                        .tag(node.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+
+                if let targetIdentityPresentation {
+                    Text(
+                        "\(targetIdentityPresentation.roleName) · "
+                            + "\(targetIdentityPresentation.policyCode) "
+                            + targetIdentityPresentation.policyName
+                    )
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+
+                TextEditor(text: $handoffNote)
+                    .font(.system(size: 11, weight: .regular))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .frame(minHeight: 66, maxHeight: 86)
+                    .background(
+                        RoundedRectangle(
+                            cornerRadius: dashboardRowCornerRadius,
+                            style: .continuous
+                        )
+                        .fill(WidgetPalette.surfaceTrack.opacity(0.55))
+                    )
+                    .onChange(of: handoffNote) { _, value in
+                        let normalized = String(
+                            value.prefix(AgentTaskEnvelope.maximumNoteLength)
+                        )
+                        if normalized != value {
+                            handoffNote = normalized
+                        }
+                    }
+                    .accessibilityLabel(
+                        language.text("交接说明", "Handoff note")
+                    )
+
+                HStack(spacing: 8) {
+                    Button(language.text("保存草稿", "Save draft")) {
+                        saveHandoff(state: .draft)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(
+                        language.text("标记本机就绪", "Mark locally ready")
+                    ) {
+                        saveHandoff(state: .ready)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Spacer(minLength: 0)
+                    Text(language.text("未投递", "Not delivered"))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let handoffFeedback {
+                Label(
+                    handoffFeedback,
+                    systemImage: handoffFeedbackIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill"
+                )
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(
+                    handoffFeedbackIsError
+                        ? WidgetPalette.statusDanger
+                        : WidgetPalette.statusSuccess
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: dashboardRowCornerRadius, style: .continuous)
+                .fill(WidgetPalette.surfaceTrack.opacity(0.55))
+        )
+    }
+
+    private var targetNodes: [AgentNodeSnapshot] {
+        nodeStore.snapshots
+            .filter { $0.descriptor.runtime.isCompanionAgent }
+            .sorted {
+                if $0.descriptor.runtime.runtimeId
+                    != $1.descriptor.runtime.runtimeId {
+                    return $0.descriptor.runtime.runtimeId
+                        < $1.descriptor.runtime.runtimeId
+                }
+                return $0.descriptor.displayName
+                    .localizedCaseInsensitiveCompare($1.descriptor.displayName)
+                    == .orderedAscending
+            }
+    }
+
+    private var targetIdentityPresentation: AgentIdentityPresentation? {
+        guard let target = targetNodes.first(where: {
+            $0.id == selectedTargetNodeID
+        }) else {
+            return nil
+        }
+        return AgentIdentityPresentation.make(
+            profile: identityStore.profile(
+                nodeID: target.id,
+                runtime: target.descriptor.runtime,
+                now: Date()
+            ),
+            language: language
+        )
+    }
+
+    private func loadHandoffDraft() {
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        let existing = envelopeStore.envelopes
+            .filter { $0.sourceTaskID == sourceTaskID }
+            .max { $0.updatedAt < $1.updatedAt }
+        if let existing,
+           targetNodes.contains(where: { $0.id == existing.targetNodeID }) {
+            selectedTargetNodeID = existing.targetNodeID
+            handoffNote = existing.handoffNote
+        } else if selectedTargetNodeID.isEmpty {
+            selectedTargetNodeID = targetNodes.first?.id ?? ""
+        }
+    }
+
+    private func saveHandoff(state: AgentTaskEnvelopeState) {
+        handoffFeedback = nil
+        handoffFeedbackIsError = false
+        guard let target = targetNodes.first(where: {
+            $0.id == selectedTargetNodeID
+        }) else {
+            handoffFeedback = language.text(
+                "请选择一个可用的目标 Agent。",
+                "Choose an available target Agent."
+            )
+            handoffFeedbackIsError = true
+            return
+        }
+
+        let project = AgentProjectWorkspaceBuilder.identity(for: item)
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        let existing = envelopeStore.envelopes.first {
+            $0.sourceTaskID == sourceTaskID
+                && $0.targetNodeID == target.id
+        }
+        if let existing,
+           existing.projectName == project.name,
+           existing.title == item.title,
+           existing.targetRuntime == target.descriptor.runtime,
+           existing.handoffNote == normalizedHandoffNote,
+           existing.state == state {
+            handoffFeedback = localHandoffSavedMessage(state)
+            return
+        }
+
+        let now = Date()
+        guard let envelope = AgentTaskEnvelope.sanitized(
+            id: existing?.id ?? UUID(),
+            originNodeID: existing?.originNodeID ?? "local-godexu",
+            revision: (existing?.revision ?? 0) + 1,
+            sourceTaskID: sourceTaskID,
+            sourceRuntime: item.source,
+            projectID: project.id,
+            projectName: project.name,
+            title: item.title,
+            targetNodeID: target.id,
+            targetRuntime: target.descriptor.runtime,
+            handoffNote: handoffNote,
+            state: state,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now
+        ) else {
+            handoffFeedback = language.text(
+                "交接草稿内容无效，请缩短标题或说明后重试。",
+                "The handoff draft is invalid. Shorten its title or note and try again."
+            )
+            handoffFeedbackIsError = true
+            return
+        }
+
+        do {
+            try envelopeStore.upsert(envelope)
+            handoffNote = envelope.handoffNote
+            handoffFeedback = localHandoffSavedMessage(state)
+        } catch {
+            handoffFeedback = language.text(
+                "无法保存本地交接草稿，请稍后重试。",
+                "Could not save the local handoff draft. Try again."
+            )
+            handoffFeedbackIsError = true
+        }
+    }
+
+    private var normalizedHandoffNote: String {
+        let lines = handoffNote
+            .components(separatedBy: .newlines)
+            .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            .filter { !$0.isEmpty }
+            .prefix(AgentTaskEnvelope.maximumNoteLines)
+        return String(
+            lines.joined(separator: "\n")
+                .prefix(AgentTaskEnvelope.maximumNoteLength)
+        )
+    }
+
+    private func localHandoffSavedMessage(
+        _ state: AgentTaskEnvelopeState
+    ) -> String {
+        switch state {
+        case .draft:
+            return language.text(
+                "草稿已保存在本机，尚未发送。",
+                "Draft saved locally. It has not been sent."
+            )
+        case .ready:
+            return language.text(
+                "已标记为本机就绪，尚未发送。",
+                "Marked locally ready. It has not been sent."
+            )
+        }
     }
 
     private func taskDetailSection(title: String, systemName: String, text: String) -> some View {
