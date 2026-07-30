@@ -162,6 +162,12 @@ enum GodexUProjectIndexReaderSelfTest {
                 failures: &failures
             )
             check(
+                !text.contains("/Users/private")
+                    && !text.contains("$CODEX_HOME"),
+                "sensitive path inside a visible title leaked",
+                failures: &failures
+            )
+            check(
                 !text.contains("private-source-task"),
                 "source task ID leaked",
                 failures: &failures
@@ -215,6 +221,14 @@ enum GodexUProjectIndexReaderSelfTest {
               'Safe Codex title',
               '/private/Fixture Workspace',
               \(updatedAt),
+              0,
+              '\(transcriptPath.replacingOccurrences(of: "'", with: "''"))'
+            );
+            INSERT INTO threads VALUES (
+              'codex-native-path-title',
+              'Inspect /Users/private/.codex and $CODEX_HOME/config.toml',
+              '/private/Fixture Workspace',
+              \(updatedAt - 1),
               0,
               '\(transcriptPath.replacingOccurrences(of: "'", with: "''"))'
             );

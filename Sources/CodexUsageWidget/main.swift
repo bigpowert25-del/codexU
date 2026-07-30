@@ -11074,8 +11074,30 @@ struct codexUMain {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-project-index") {
+            exit(GodexUProjectIndexSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-project-index-reader") {
+            exit(GodexUProjectIndexReaderSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-dynamic-island") {
             exit(DynamicIslandPresentationSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--dump-project-index") {
+            do {
+                let data = try GodexUProjectIndexCodec.encode(
+                    GodexUProjectIndexReader.live().load()
+                )
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data([0x0a]))
+                return
+            } catch {
+                fputs("project_index_unavailable\n", stderr)
+                exit(1)
+            }
         }
 
         if CommandLine.arguments.contains("--dump-agent-nodes") {

@@ -89,7 +89,12 @@ struct GodexUProjectIndexReader {
         }
 
         let query = """
-        SELECT id, title, cwd, updated_at AS updatedAt, archived
+        SELECT
+          substr(id, 1, 512) AS id,
+          substr(title, 1, 512) AS title,
+          substr(cwd, 1, 1024) AS cwd,
+          updated_at AS updatedAt,
+          archived
         FROM threads
         ORDER BY updated_at DESC
         LIMIT 500;
@@ -253,7 +258,6 @@ struct GodexUProjectIndexReader {
         }
         let process = Process()
         let output = Pipe()
-        let errors = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
         process.arguments = [
             "-readonly",
@@ -262,22 +266,22 @@ struct GodexUProjectIndexReader {
             query
         ]
         process.standardOutput = output
-        process.standardError = errors
+        process.standardError = FileHandle.nullDevice
         do {
             try process.run()
+            let data = try output.fileHandleForReading.readToEnd() ?? Data()
             process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  data.count <= 2 * 1_024 * 1_024,
+                  let objects = try JSONSerialization.jsonObject(with: data)
+                    as? [[String: Any]]
+            else {
+                return nil
+            }
+            return objects
         } catch {
             return nil
         }
-        guard process.terminationStatus == 0,
-              let data = try? output.fileHandleForReading.readToEnd(),
-              data.count <= 2 * 1_024 * 1_024,
-              let objects = try? JSONSerialization.jsonObject(with: data)
-                as? [[String: Any]]
-        else {
-            return nil
-        }
-        return objects
     }
 
     private func openClawTaskState(_ status: String) -> GodexUTaskState {

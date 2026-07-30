@@ -96,13 +96,14 @@ struct GodexUProjectIndex: Codable, Equatable {
             var handoffs: [GodexUHandoffSummary]
         }
 
+        let publicEnvelopes = envelopes.compactMap(normalizedHandoff)
         var accumulators: [String: Accumulator] = [:]
         for task in tasks {
             let identity = projectIdentity(
                 runtime: task.sourceRuntime,
                 candidateName: task.projectName
             )
-            let title = boundedSingleLine(task.title, limit: 160)
+            let title = publicText(task.title, limit: 160)
             guard !title.isEmpty else { continue }
             let taskIdentity = "\(task.sourceRuntime.runtimeId):\(task.nativeID)"
             let normalizedID = "task-\(stableIdentifier(taskIdentity))"
@@ -127,8 +128,8 @@ struct GodexUProjectIndex: Codable, Equatable {
             accumulators[identity.id] = value
         }
 
-        for envelope in envelopes {
-            let projectName = boundedSingleLine(
+        for envelope in publicEnvelopes {
+            let projectName = publicText(
                 envelope.projectName,
                 limit: AgentTaskEnvelope.maximumProjectNameLength
             )
@@ -193,7 +194,7 @@ struct GodexUProjectIndex: Codable, Equatable {
                 $0.runtime.runtimeId < $1.runtime.runtimeId
             },
             projects: projects,
-            handoffs: envelopes.sorted {
+            handoffs: publicEnvelopes.sorted {
                 if $0.updatedAt != $1.updatedAt {
                     return $0.updatedAt > $1.updatedAt
                 }
@@ -208,7 +209,7 @@ struct GodexUProjectIndex: Codable, Equatable {
         candidateName: String?
     ) -> (id: String, name: String) {
         if runtime == .codex || runtime == .claudeCode {
-            let name = boundedSingleLine(
+            let name = publicText(
                 candidateName ?? "",
                 limit: AgentTaskEnvelope.maximumProjectNameLength
             )
@@ -249,17 +250,72 @@ struct GodexUProjectIndex: Codable, Equatable {
         }
     }
 
-    private static func boundedSingleLine(
+    private static func normalizedHandoff(
+        _ envelope: GodexUHandoffSummary
+    ) -> GodexUHandoffSummary? {
+        let projectName = publicText(
+            envelope.projectName,
+            limit: AgentTaskEnvelope.maximumProjectNameLength
+        )
+        let title = publicText(
+            envelope.title,
+            limit: AgentTaskEnvelope.maximumTitleLength
+        )
+        guard !projectName.isEmpty, !title.isEmpty else { return nil }
+        return GodexUHandoffSummary(
+            id: envelope.id,
+            projectID: envelope.projectID,
+            projectName: projectName,
+            title: title,
+            sourceRuntime: envelope.sourceRuntime,
+            targetRuntime: envelope.targetRuntime,
+            state: envelope.state,
+            revision: envelope.revision,
+            createdAt: envelope.createdAt,
+            updatedAt: envelope.updatedAt
+        )
+    }
+
+    private static func publicText(
         _ value: String,
         limit: Int
     ) -> String {
-        String(
-            value
-                .split(whereSeparator: \.isWhitespace)
-                .joined(separator: " ")
-                .prefix(limit)
-        )
+        let normalized = value
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .map(redactedToken)
+            .joined(separator: " ")
+        return String(normalized.prefix(limit))
     }
+
+    private static func redactedToken(_ token: String) -> String {
+        let lowered = token.lowercased()
+        let pathMarkers = [
+            "/users/",
+            "/volumes/",
+            "/private/",
+            "/var/",
+            "$codex_home",
+            "~/.codex",
+            "~/.openclaw"
+        ]
+        if pathMarkers.contains(where: lowered.contains) {
+            return "[path]"
+        }
+        let range = NSRange(token.startIndex..<token.endIndex, in: token)
+        if uuidExpression.firstMatch(in: token, range: range) != nil {
+            return uuidExpression.stringByReplacingMatches(
+                in: token,
+                range: range,
+                withTemplate: "[id]"
+            )
+        }
+        return token
+    }
+
+    private static let uuidExpression = try! NSRegularExpression(
+        pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    )
 
     private static func stableIdentifier(_ value: String) -> String {
         var hash: UInt64 = 14_695_981_039_346_656_037
