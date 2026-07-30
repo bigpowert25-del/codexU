@@ -8889,7 +8889,12 @@ struct TaskDetailView: View {
 
     private var targetNodes: [AgentNodeSnapshot] {
         nodeStore.snapshots
-            .filter { $0.descriptor.runtime.isCompanionAgent }
+            .filter {
+                AgentProjectWorkspaceBuilder.isCompatibleHandoffTarget(
+                    source: item.source,
+                    target: $0.descriptor.runtime
+                )
+            }
             .sorted {
                 if $0.descriptor.runtime.runtimeId
                     != $1.descriptor.runtime.runtimeId {

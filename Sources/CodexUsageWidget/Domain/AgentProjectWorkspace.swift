@@ -52,6 +52,13 @@ enum AgentProjectWorkspaceBuilder {
         "task-\(stableIdentifier("\(item.source.runtimeId):\(item.id)"))"
     }
 
+    static func isCompatibleHandoffTarget(
+        source: RuntimeScope,
+        target: RuntimeScope
+    ) -> Bool {
+        target.isCompanionAgent && target != source
+    }
+
     static func make(
         taskBoard: TaskBoard?,
         envelopes: [AgentTaskEnvelope]

@@ -189,6 +189,27 @@ enum AgentTaskEnvelopeSelfTest {
                 AgentProjectWorkspaceBuilder.sourceTaskID(for: activeTask)
                     != AgentProjectWorkspaceBuilder.sourceTaskID(for: doneTask),
                 "different tasks should keep different source IDs"
+            ),
+            check(
+                AgentProjectWorkspaceBuilder.isCompatibleHandoffTarget(
+                    source: .codex,
+                    target: .hermes
+                ),
+                "a different companion runtime should be selectable"
+            ),
+            check(
+                !AgentProjectWorkspaceBuilder.isCompatibleHandoffTarget(
+                    source: .openClaw,
+                    target: .openClaw
+                ),
+                "a runtime should not hand a task to itself"
+            ),
+            check(
+                !AgentProjectWorkspaceBuilder.isCompatibleHandoffTarget(
+                    source: .hermes,
+                    target: .codex
+                ),
+                "Codex should remain the source surface in this phase"
             )
         ]
 
