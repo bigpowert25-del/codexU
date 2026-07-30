@@ -3,17 +3,30 @@ import SwiftUI
 struct LocalSystemStatusStrip: View {
     let snapshot: LocalSystemSnapshot
     let language: WidgetLanguage
+    let isCompact: Bool
+
+    init(
+        snapshot: LocalSystemSnapshot,
+        language: WidgetLanguage,
+        isCompact: Bool = false
+    ) {
+        self.snapshot = snapshot
+        self.language = language
+        self.isCompact = isCompact
+    }
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text(language.text("本机状态", "Local system"))
-                    .font(.system(size: 11, weight: .semibold))
+            if !isCompact {
+                HStack(spacing: 7) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(language.text("本机状态", "Local system"))
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .frame(width: 110, alignment: .leading)
             }
-            .frame(width: 110, alignment: .leading)
 
             systemMetric(
                 title: "CPU",
@@ -22,7 +35,7 @@ struct LocalSystemStatusStrip: View {
                 systemName: "cpu",
                 tint: metricTint(snapshot.cpuUsagePercent)
             )
-            Divider().frame(height: 34)
+            Divider().frame(height: isCompact ? 24 : 34)
             systemMetric(
                 title: language.text("内存", "Memory"),
                 value: memoryPercentText,
@@ -30,7 +43,7 @@ struct LocalSystemStatusStrip: View {
                 systemName: "memorychip",
                 tint: metricTint(memoryPercent)
             )
-            Divider().frame(height: 34)
+            Divider().frame(height: isCompact ? 24 : 34)
             systemMetric(
                 title: language.text("温度 / 热状态", "Temperature / thermal"),
                 value: temperatureText,
@@ -43,8 +56,8 @@ struct LocalSystemStatusStrip: View {
                 "Shows a sensor temperature when available; otherwise shows the macOS thermal state."
             ))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, isCompact ? 8 : 14)
+        .padding(.vertical, isCompact ? 7 : 10)
         .sectionBackground()
         .accessibilityElement(children: .contain)
     }
@@ -72,14 +85,16 @@ struct LocalSystemStatusStrip: View {
                         .monospacedDigit()
                         .lineLimit(1)
                 }
-                Text(detail)
-                    .font(.system(size: 8.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                if !isCompact {
+                    Text(detail)
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, isCompact ? 8 : 12)
     }
 
     private var memoryPercent: Double? {

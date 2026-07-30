@@ -1,0 +1,42 @@
+{
+  "refreshedAt": "2026-07-27T09:30:00+08:00",
+  "codex": {
+    "quota": {
+      "fiveHourPercent": 42,
+      "sevenDayPercent": 64
+    },
+    "todayTokens": 313600000,
+    "activeTasks": 5,
+    "attentionTasks": 1
+  },
+  "agents": [
+    {
+      "id": "openclaw",
+      "name": "OpenClaw",
+      "source": "nas",
+      "status": "running",
+      "todayTokens": 7100000
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "source": "nas",
+      "status": "running",
+      "todayTokens": 420000
+    }
+  ],
+  "system": {
+    "cpuPercent": 38,
+    "memoryPercent": 72,
+    "thermalState": "nominal",
+    "temperatureC": null
+  },
+  "events": [
+    {
+      "kind": "attention",
+      "source": "codex",
+      "title": "Needs input",
+      "updatedAt": "2026-07-27T09:29:00+08:00"
+    }
+  ]
+}

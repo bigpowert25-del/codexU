@@ -3225,6 +3225,43 @@ enum ParticleAnimationMode: String, CaseIterable, Equatable {
     }
 }
 
+enum DisplaySurfaceMode: String, CaseIterable, Equatable {
+    case classicAndDynamicIsland = "classicAndDynamicIsland"
+    case classicOnly = "classicOnly"
+    case dynamicIslandOnly = "dynamicIslandOnly"
+
+    static let storageKey = "codexU.displaySurfaceMode"
+
+    var includesClassicSurface: Bool {
+        switch self {
+        case .classicAndDynamicIsland, .classicOnly:
+            return true
+        case .dynamicIslandOnly:
+            return false
+        }
+    }
+
+    var includesDynamicIsland: Bool {
+        switch self {
+        case .classicAndDynamicIsland, .dynamicIslandOnly:
+            return true
+        case .classicOnly:
+            return false
+        }
+    }
+
+    static func storedOrDefault(defaults: UserDefaults = .standard) -> DisplaySurfaceMode {
+        guard let rawValue = defaults.string(forKey: storageKey),
+              let mode = DisplaySurfaceMode(rawValue: rawValue)
+        else { return .classicAndDynamicIsland }
+        return mode
+    }
+
+    func persist(defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.storageKey)
+    }
+}
+
 final class AppSettings: ObservableObject {
     private static let keepMainWindowOnTopKey = "codexU.keepMainWindowOnTop"
     private static let keepRunningWhenMainWindowClosedKey = "codexU.keepRunningWhenMainWindowClosed"
@@ -3249,9 +3286,27 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var workbenchSkin: GodexUSkin {
+        didSet {
+            workbenchSkin.persist(defaults: defaults)
+        }
+    }
+
+    @Published var workbenchStage: GodexUWorkbenchStage {
+        didSet {
+            workbenchStage.persist(defaults: defaults)
+        }
+    }
+
     @Published var particleAnimationMode: ParticleAnimationMode {
         didSet {
             particleAnimationMode.persist(defaults: defaults)
+        }
+    }
+
+    @Published var displaySurfaceMode: DisplaySurfaceMode {
+        didSet {
+            displaySurfaceMode.persist(defaults: defaults)
         }
     }
 
@@ -3307,7 +3362,10 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         language = WidgetLanguage.storedOrAutomatic(defaults: defaults)
         themeMode = WidgetThemeMode.storedOrAutomatic(defaults: defaults)
+        workbenchSkin = GodexUSkin.storedOrDefault(defaults: defaults)
+        workbenchStage = GodexUWorkbenchStage.storedOrDefault(defaults: defaults)
         particleAnimationMode = ParticleAnimationMode.storedOrDefault(defaults: defaults)
+        displaySurfaceMode = DisplaySurfaceMode.storedOrDefault(defaults: defaults)
         keepMainWindowOnTop = defaults.bool(forKey: Self.keepMainWindowOnTopKey)
         if defaults.object(forKey: Self.keepRunningWhenMainWindowClosedKey) == nil {
             keepRunningWhenMainWindowClosed = true
@@ -3458,16 +3516,23 @@ struct UsageWidgetView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var settings: AppSettings
     @ObservedObject var updateStore: AppUpdateStore
+    var onOpenSettings: () -> Void = {}
     @StateObject private var systemMonitor = LocalSystemMonitor()
+    @StateObject private var nodeStore = AgentNodeStore()
+    @StateObject private var identityStore = AgentIdentityProfileStore()
+    @StateObject private var envelopeStore = AgentTaskEnvelopeStore()
+    @StateObject private var deliveryOutbox = AgentTaskDeliveryOutbox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var selectedDashboardTab: DashboardTab = .tasks
+    @State private var selectedWorkbenchDestination: GodexUWorkbenchDestination = .overview
+    @State private var selectedWorkbenchProjectID: String?
 
-    static let widgetWidth: CGFloat = 820
-    static let widgetDefaultHeight: CGFloat = 720
-    static let widgetMinHeight: CGFloat = 620
-    static let widgetMaxHeight: CGFloat = 920
+    static let widgetWidth: CGFloat = 1320
+    static let widgetDefaultHeight: CGFloat = 820
+    static let widgetMinWidth: CGFloat = 1040
+    static let widgetMinHeight: CGFloat = 680
     static let windowCornerRadius: CGFloat = 18
 
     private var snapshot: UsageSnapshot { store.snapshot }
@@ -3480,30 +3545,71 @@ struct UsageWidgetView: View {
     private var effectiveColorScheme: ColorScheme {
         themeMode.preferredColorScheme ?? colorScheme
     }
+    private var workbenchOverview: GodexUWorkbenchOverview {
+        return GodexUWorkbenchOverview.make(
+            officialTrend: snapshot.cloudUsageTrend,
+            taskBoard: combinedTaskBoard,
+            nodes: nodeStore.snapshots
+        )
+    }
+    private var workbenchProjects: [AgentProjectWorkspace] {
+        AgentProjectWorkspaceBuilder.make(
+            taskBoard: combinedTaskBoard,
+            envelopes: envelopeStore.envelopes
+        )
+    }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            windowSurface
-                .ignoresSafeArea(.container, edges: [.top, .bottom])
-                .accessibilityHidden(true)
-            widgetContent
+        GodexUWorkbenchShell(
+            settings: settings,
+            destination: $selectedWorkbenchDestination,
+            onOpenSettings: onOpenSettings
+        ) {
+            workbenchDestinationContent
         }
-        .frame(width: Self.widgetWidth, alignment: .topLeading)
-        .frame(minHeight: Self.widgetMinHeight, maxHeight: .infinity, alignment: .topLeading)
+        .frame(
+            idealWidth: Self.widgetWidth,
+            maxWidth: .infinity,
+            idealHeight: Self.widgetDefaultHeight,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .environment(\.colorScheme, effectiveColorScheme)
         .preferredColorScheme(themeMode.preferredColorScheme)
         .readableForegroundHierarchy(effectiveColorScheme)
+        .environmentObject(nodeStore)
+        .environmentObject(envelopeStore)
+        .environmentObject(deliveryOutbox)
+        .environmentObject(identityStore)
         .onAppear {
             themeMode.applyAppearance()
             systemMonitor.start()
-            store.setTaskBoardSelected(selectedDashboardTab == .tasks)
+            nodeStore.start(codexRuntime: store.runtimeSnapshot(for: .codex))
+            store.setTaskBoardSelected(
+                shouldPollTaskBoard(for: selectedWorkbenchDestination)
+            )
         }
         .onDisappear {
             systemMonitor.stop()
+            nodeStore.stop()
             store.setTaskBoardSelected(false)
         }
-        .onChange(of: selectedDashboardTab) { _, tab in
-            store.setTaskBoardSelected(tab == .tasks)
+        .onChange(of: store.runtimeSnapshots) { _, _ in
+            nodeStore.updateLocalCodex(store.runtimeSnapshot(for: .codex))
+        }
+        .onChange(of: selectedWorkbenchDestination) { _, destination in
+            store.setTaskBoardSelected(shouldPollTaskBoard(for: destination))
+        }
+    }
+
+    private func shouldPollTaskBoard(
+        for destination: GodexUWorkbenchDestination
+    ) -> Bool {
+        switch destination {
+        case .overview, .projects, .tasks:
+            return true
+        case .agents, .usage, .skills:
+            return false
         }
     }
 
@@ -3532,24 +3638,137 @@ struct UsageWidgetView: View {
             )
     }
 
-    private var widgetContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if shouldShowEnvironmentChecklist {
-                        environmentChecklistSection
+    @ViewBuilder
+    private var workbenchDestinationContent: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                switch selectedWorkbenchDestination {
+                case .overview:
+                    GodexUOverviewDashboard(
+                        overview: workbenchOverview,
+                        stage: settings.workbenchStage,
+                        skin: settings.workbenchSkin,
+                        language: language,
+                        nodes: nodeStore.snapshots,
+                        projects: workbenchProjects,
+                        systemSnapshot: systemMonitor.snapshot,
+                        identityStore: identityStore,
+                        envelopeStore: envelopeStore,
+                        openProjects: { projectID in
+                            selectedWorkbenchProjectID = projectID
+                            selectedWorkbenchDestination = .projects
+                        },
+                        openTasks: {
+                            selectedWorkbenchDestination = .tasks
+                        },
+                        openAgents: {
+                            selectedWorkbenchDestination = .agents
+                        }
+                    )
+                case .projects:
+                    themedDestinationSurface(
+                        title: language.text("项目", "Projects"),
+                        detail: language.text(
+                            "跨 Agent 任务与本机交接",
+                            "Cross-Agent tasks and local handoffs"
+                        )
+                    ) {
+                        ProjectWorkspacePanel(
+                            taskBoard: combinedTaskBoard,
+                            usageBoard: snapshot.local?.projectBoard,
+                            language: language,
+                            initialSelectedProjectID: selectedWorkbenchProjectID
+                        )
                     }
-                    usageOverviewSection
-                    LocalSystemStatusStrip(snapshot: systemMonitor.snapshot, language: language)
-                    dashboardTabsSection
+                case .tasks:
+                    themedDestinationSurface(
+                        title: language.text("任务", "Tasks"),
+                        detail: language.text(
+                            "来源、状态与最近活动",
+                            "Sources, status, and recent activity"
+                        )
+                    ) {
+                        taskBoardContent
+                    }
+                case .agents:
+                    themedDestinationSurface(
+                        title: language.text("Agent 节点", "Agent nodes"),
+                        detail: language.text(
+                            "身份、能力与可验证状态",
+                            "Identity, capabilities, and verified status"
+                        )
+                    ) {
+                        AgentNodeStatusSection(
+                            profileStore: identityStore,
+                            snapshots: nodeStore.snapshots,
+                            language: language
+                        )
+                    }
+                case .usage:
+                    themedDestinationSurface(
+                        title: language.text("用量", "Usage"),
+                        detail: language.text(
+                            "官方活动与本机归因分开显示",
+                            "Official activity separated from local attribution"
+                        )
+                    ) {
+                        RuntimeSelector(
+                            selected: store.selectedRuntimeScope,
+                            scopes: settings.visibleRuntimeScopes,
+                            language: language
+                        ) { scope in
+                            store.selectRuntime(scope)
+                        }
+                        usageOverviewSection
+                        UsageTrendPanel(
+                            trend: displayedUsageTrend,
+                            runtimeScope: store.selectedRuntimeScope,
+                            language: language
+                        )
+                        if shouldShowEnvironmentChecklist {
+                            environmentChecklistSection
+                        }
+                    }
+                case .skills:
+                    themedDestinationSurface(
+                        title: "Skills",
+                        detail: language.text(
+                            "本机加载与工具使用",
+                            "Local loads and tool usage"
+                        )
+                    ) {
+                        SkillUsagePanel(
+                            skillUsages: snapshot.local?.skillUsages ?? [],
+                            toolUsages: snapshot.local?.toolUsages ?? [],
+                            language: language
+                        )
+                    }
                 }
-                .padding(.bottom, 2)
             }
-            footer
+            .padding(16)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
+        .safeAreaInset(edge: .bottom) {
+            footer
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    GodexUWorkbenchTheme(skin: settings.workbenchSkin)
+                        .shell
+                )
+        }
+    }
+
+    private func themedDestinationSurface<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        GodexUWorkbenchDestinationSurface(
+            title: title,
+            detail: detail,
+            skin: settings.workbenchSkin,
+            content: content
+        )
     }
 
     private var environmentChecklistSection: some View {
@@ -3721,8 +3940,9 @@ struct UsageWidgetView: View {
                 language: language
             )
         case .projects:
-            ProjectBoardPanel(
-                projectBoard: snapshot.local?.projectBoard,
+            ProjectWorkspacePanel(
+                taskBoard: combinedTaskBoard,
+                usageBoard: snapshot.local?.projectBoard,
                 language: language
             )
         case .skills:
@@ -3775,9 +3995,17 @@ struct UsageWidgetView: View {
             let quality = sourceQualityText(trend.sourceQuality, language: language)
             return language.text("\(trend.activeDayCount) 活跃日 · \(quality)", "\(trend.activeDayCount) active days · \(quality)")
         case .projects:
-            let activeCount = snapshot.local?.projectBoard?.recentProjects.count ?? 0
-            let totalCount = snapshot.local?.projectBoard?.allProjects.count ?? 0
-            return language.text("\(activeCount) 活跃项目 · \(totalCount) 全部", "\(activeCount) active projects · \(totalCount) total")
+            let workspaces = AgentProjectWorkspaceBuilder.make(
+                taskBoard: combinedTaskBoard,
+                envelopes: envelopeStore.envelopes
+            )
+            let handoffCount = workspaces.reduce(0) {
+                $0 + $1.envelopes.count
+            }
+            return language.text(
+                "\(workspaces.count) 项目 · \(handoffCount) 本地交接",
+                "\(workspaces.count) projects · \(handoffCount) local handoffs"
+            )
         case .skills:
             let skillCount = snapshot.local?.skillUsages.count ?? 0
             let toolCount = snapshot.local?.toolUsages.count ?? 0
@@ -4167,6 +4395,39 @@ struct SettingsPanelView: View {
                     }
 
                     SettingsPickerRow(
+                        title: language.text("工作台档位", "Workbench stage"),
+                        detail: language.text(
+                            "轻览、协同或完整指挥视图",
+                            "Light, Sync, or full Command view"
+                        )
+                    ) {
+                        SettingsSegmentedControl(
+                            selection: $settings.workbenchStage,
+                            options: GodexUWorkbenchStage.allCases.map {
+                                SettingsSegmentOption(
+                                    value: $0,
+                                    title: $0.displayName(language: language)
+                                )
+                            },
+                            width: 220
+                        )
+                    }
+
+                    SettingsPickerRow(
+                        title: language.text("工作台皮肤", "Workbench skin"),
+                        detail: language.text(
+                            "默认钛金工作室；只改变视觉，不改变数据或权限",
+                            "Titanium Studio by default; visual only"
+                        )
+                    ) {
+                        GodexUSkinMenu(
+                            selection: $settings.workbenchSkin,
+                            language: language
+                        )
+                        .frame(width: 220, alignment: .trailing)
+                    }
+
+                    SettingsPickerRow(
                         title: language.text("额度环动效", "Quota ring motion"),
                         detail: language.text(
                             "默认仅窗口置前且聚焦；省电仅悬停环带",
@@ -4180,6 +4441,33 @@ struct SettingsPanelView: View {
                                 SettingsSegmentOption(value: .powerSaving, title: language.text("省电", "Power Saving"))
                             ],
                             width: 190
+                        )
+                    }
+
+                    SettingsPickerRow(
+                        title: language.text("显示入口", "Display surface"),
+                        detail: language.text(
+                            "可同时显示原有面板和灵动岛，也可二选一",
+                            "Show the original dashboard, Dynamic Island, or both"
+                        )
+                    ) {
+                        SettingsSegmentedControl(
+                            selection: $settings.displaySurfaceMode,
+                            options: [
+                                SettingsSegmentOption(
+                                    value: .classicAndDynamicIsland,
+                                    title: language.text("双开", "Both")
+                                ),
+                                SettingsSegmentOption(
+                                    value: .classicOnly,
+                                    title: language.text("原有", "Classic")
+                                ),
+                                SettingsSegmentOption(
+                                    value: .dynamicIslandOnly,
+                                    title: language.text("灵动岛", "Island")
+                                )
+                            ],
+                            width: 238
                         )
                     }
                 }
@@ -6218,6 +6506,80 @@ private enum QuotaParticleAnimationSelfTest {
             return true
         }
         failures.forEach { print("particle animation self-test failed: \($0)") }
+        return false
+    }
+}
+
+private enum DisplaySurfaceModeSelfTest {
+    static func run() -> Bool {
+        var failures: [String] = []
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            if !condition() {
+                failures.append(message)
+            }
+        }
+
+        let suiteName = "codexU.display-surface-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            print("display surface self-test failed: could not create UserDefaults suite")
+            return false
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        expect(
+            DisplaySurfaceMode.storedOrDefault(defaults: defaults) == .classicAndDynamicIsland,
+            "missing display surface preference should default to classic + dynamic island"
+        )
+
+        let settings = AppSettings(defaults: defaults)
+        settings.displaySurfaceMode = .dynamicIslandOnly
+        expect(
+            defaults.string(forKey: DisplaySurfaceMode.storageKey) == DisplaySurfaceMode.dynamicIslandOnly.rawValue,
+            "display surface preference should persist immediately"
+        )
+        expect(
+            AppSettings(defaults: defaults).displaySurfaceMode == .dynamicIslandOnly,
+            "display surface preference should survive AppSettings recreation"
+        )
+
+        expect(
+            DisplaySurfaceMode.classicAndDynamicIsland.includesClassicSurface,
+            "combined mode should include the original app surface"
+        )
+        expect(
+            DisplaySurfaceMode.classicAndDynamicIsland.includesDynamicIsland,
+            "combined mode should include dynamic island"
+        )
+        expect(
+            DisplaySurfaceMode.classicOnly.includesClassicSurface,
+            "classic-only mode should include the original app surface"
+        )
+        expect(
+            !DisplaySurfaceMode.classicOnly.includesDynamicIsland,
+            "classic-only mode should not include dynamic island"
+        )
+        expect(
+            !DisplaySurfaceMode.dynamicIslandOnly.includesClassicSurface,
+            "dynamic-island-only mode should not auto-show the original app surface"
+        )
+        expect(
+            DisplaySurfaceMode.dynamicIslandOnly.includesDynamicIsland,
+            "dynamic-island-only mode should include dynamic island"
+        )
+
+        defaults.set("future-mode", forKey: DisplaySurfaceMode.storageKey)
+        expect(
+            DisplaySurfaceMode.storedOrDefault(defaults: defaults) == .classicAndDynamicIsland,
+            "unknown display surface preference should fall back to classic + dynamic island"
+        )
+
+        if failures.isEmpty {
+            print("display surface self-test passed")
+            return true
+        }
+        failures.forEach { print("display surface self-test failed: \($0)") }
         return false
     }
 }
@@ -8405,7 +8767,17 @@ struct TaskDetailView: View {
     let item: TaskItem
     let language: WidgetLanguage
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nodeStore: AgentNodeStore
+    @EnvironmentObject private var envelopeStore: AgentTaskEnvelopeStore
+    @EnvironmentObject private var deliveryOutbox: AgentTaskDeliveryOutbox
+    @EnvironmentObject private var identityStore: AgentIdentityProfileStore
     @State private var openErrorMessage: String?
+    @State private var selectedTargetNodeID = ""
+    @State private var handoffNote = ""
+    @State private var handoffFeedback: String?
+    @State private var handoffFeedbackIsError = false
+    @State private var deliveryFeedback: String?
+    @State private var deliveryFeedbackIsError = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -8476,6 +8848,7 @@ struct TaskDetailView: View {
                         text: item.summary ?? language.text("暂无摘要", "No summary available")
                     )
                     taskProgressSection
+                    handoffEditorSection
                     taskDetailSection(
                         title: language.text("最近回复", "Latest reply"),
                         systemName: "bubble.left.and.bubble.right.fill",
@@ -8486,7 +8859,13 @@ struct TaskDetailView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 560, maxWidth: 560, minHeight: 380, maxHeight: 560, alignment: .topLeading)
+        .frame(minWidth: 600, maxWidth: 600, minHeight: 420, maxHeight: 640, alignment: .topLeading)
+        .onAppear {
+            loadHandoffDraft()
+        }
+        .onChange(of: targetNodes.map(\.id)) { _, _ in
+            loadHandoffDraft()
+        }
     }
 
     private func openInCodex(_ target: TaskNavigationTarget) {
@@ -8581,6 +8960,404 @@ struct TaskDetailView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(language.text("完成进度", "Progress"))
         .accessibilityValue(progressText + "，" + note)
+    }
+
+    private var handoffEditorSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Label(
+                    language.text("交给另一个 Agent", "Handoff to another Agent"),
+                    systemImage: "arrow.triangle.branch"
+                )
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Text(language.text("仅保存在本机", "Local only"))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if targetNodes.isEmpty {
+                Text(language.text(
+                    "尚未发现可选的 OpenClaw、Claude Code 或 Hermes 节点。",
+                    "No OpenClaw, Claude Code, or Hermes node is available yet."
+                ))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Picker(
+                    language.text("目标 Agent", "Target Agent"),
+                    selection: $selectedTargetNodeID
+                ) {
+                    ForEach(targetNodes) { node in
+                        Text(
+                            "\(node.descriptor.displayName) · \(node.descriptor.deviceName)"
+                        )
+                        .tag(node.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+
+                if let targetIdentityPresentation {
+                    Text(
+                        "\(targetIdentityPresentation.roleName) · "
+                            + "\(targetIdentityPresentation.policyCode) "
+                            + targetIdentityPresentation.policyName
+                    )
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+
+                TextEditor(text: $handoffNote)
+                    .font(.system(size: 11, weight: .regular))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .frame(minHeight: 66, maxHeight: 86)
+                    .background(
+                        RoundedRectangle(
+                            cornerRadius: dashboardRowCornerRadius,
+                            style: .continuous
+                        )
+                        .fill(WidgetPalette.surfaceTrack.opacity(0.55))
+                    )
+                    .onChange(of: handoffNote) { _, value in
+                        let normalized = String(
+                            value.prefix(AgentTaskEnvelope.maximumNoteLength)
+                        )
+                        if normalized != value {
+                            handoffNote = normalized
+                        }
+                    }
+                    .accessibilityLabel(
+                        language.text("交接说明", "Handoff note")
+                    )
+
+                HStack(spacing: 8) {
+                    Button(language.text("保存草稿", "Save draft")) {
+                        saveHandoff(state: .draft)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(
+                        language.text("标记本机就绪", "Mark locally ready")
+                    ) {
+                        saveHandoff(state: .ready)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Spacer(minLength: 0)
+                    Text(language.text("未投递", "Not delivered"))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if selectedEnvelope?.state == .ready {
+                    Divider()
+                    HStack(spacing: 8) {
+                        if selectedDeliveryPackage == nil {
+                            Button(
+                                language.text(
+                                    "生成本机投递包",
+                                    "Prepare local delivery package"
+                                )
+                            ) {
+                                prepareDeliveryPackage()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        } else {
+                            Label(
+                                language.text(
+                                    "待人工发送",
+                                    "Awaiting manual send"
+                                ),
+                                systemImage: "shippingbox.fill"
+                            )
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(WidgetPalette.statusWarning)
+
+                            Button(
+                                language.text(
+                                    "取消投递包",
+                                    "Cancel package"
+                                )
+                            ) {
+                                cancelDeliveryPackage()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    Text(language.text(
+                        "只写入本机待投递箱，不会连接或发送到 NAS、OpenClaw 或 Hermes。",
+                        "Writes only to the local outbox. It does not connect or send to NAS, OpenClaw, or Hermes."
+                    ))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let handoffFeedback {
+                Label(
+                    handoffFeedback,
+                    systemImage: handoffFeedbackIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill"
+                )
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(
+                    handoffFeedbackIsError
+                        ? WidgetPalette.statusDanger
+                        : WidgetPalette.statusSuccess
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let deliveryFeedback {
+                Label(
+                    deliveryFeedback,
+                    systemImage: deliveryFeedbackIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "shippingbox.fill"
+                )
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(
+                    deliveryFeedbackIsError
+                        ? WidgetPalette.statusDanger
+                        : WidgetPalette.statusSuccess
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: dashboardRowCornerRadius, style: .continuous)
+                .fill(WidgetPalette.surfaceTrack.opacity(0.55))
+        )
+    }
+
+    private var targetNodes: [AgentNodeSnapshot] {
+        nodeStore.snapshots
+            .filter {
+                AgentProjectWorkspaceBuilder.isCompatibleHandoffTarget(
+                    source: item.source,
+                    target: $0.descriptor.runtime
+                )
+            }
+            .sorted {
+                if $0.descriptor.runtime.runtimeId
+                    != $1.descriptor.runtime.runtimeId {
+                    return $0.descriptor.runtime.runtimeId
+                        < $1.descriptor.runtime.runtimeId
+                }
+                return $0.descriptor.displayName
+                    .localizedCaseInsensitiveCompare($1.descriptor.displayName)
+                    == .orderedAscending
+            }
+    }
+
+    private var targetIdentityPresentation: AgentIdentityPresentation? {
+        guard let target = targetNodes.first(where: {
+            $0.id == selectedTargetNodeID
+        }) else {
+            return nil
+        }
+        return AgentIdentityPresentation.make(
+            profile: identityStore.profile(
+                nodeID: target.id,
+                runtime: target.descriptor.runtime,
+                now: Date()
+            ),
+            language: language
+        )
+    }
+
+    private var selectedEnvelope: AgentTaskEnvelope? {
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        return envelopeStore.envelopes
+            .filter {
+                $0.sourceTaskID == sourceTaskID
+                    && $0.targetNodeID == selectedTargetNodeID
+            }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
+    private var selectedDeliveryPackage: AgentTaskDeliveryPackage? {
+        guard let selectedEnvelope else { return nil }
+        return deliveryOutbox.package(
+            for: selectedEnvelope.id,
+            revision: selectedEnvelope.revision
+        )
+    }
+
+    private func loadHandoffDraft() {
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        let existing = envelopeStore.envelopes
+            .filter { $0.sourceTaskID == sourceTaskID }
+            .max { $0.updatedAt < $1.updatedAt }
+        if let existing,
+           targetNodes.contains(where: { $0.id == existing.targetNodeID }) {
+            selectedTargetNodeID = existing.targetNodeID
+            handoffNote = existing.handoffNote
+        } else if selectedTargetNodeID.isEmpty {
+            selectedTargetNodeID = targetNodes.first?.id ?? ""
+        }
+    }
+
+    private func saveHandoff(state: AgentTaskEnvelopeState) {
+        handoffFeedback = nil
+        handoffFeedbackIsError = false
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
+        guard let target = targetNodes.first(where: {
+            $0.id == selectedTargetNodeID
+        }) else {
+            handoffFeedback = language.text(
+                "请选择一个可用的目标 Agent。",
+                "Choose an available target Agent."
+            )
+            handoffFeedbackIsError = true
+            return
+        }
+
+        let project = AgentProjectWorkspaceBuilder.identity(for: item)
+        let sourceTaskID = AgentProjectWorkspaceBuilder.sourceTaskID(for: item)
+        let existing = envelopeStore.envelopes.first {
+            $0.sourceTaskID == sourceTaskID
+                && $0.targetNodeID == target.id
+        }
+        if let existing,
+           existing.projectName == project.name,
+           existing.title == item.title,
+           existing.targetRuntime == target.descriptor.runtime,
+           existing.handoffNote == normalizedHandoffNote,
+           existing.state == state {
+            handoffFeedback = localHandoffSavedMessage(state)
+            return
+        }
+
+        let now = Date()
+        guard let envelope = AgentTaskEnvelope.sanitized(
+            id: existing?.id ?? UUID(),
+            originNodeID: existing?.originNodeID ?? "local-godexu",
+            revision: (existing?.revision ?? 0) + 1,
+            sourceTaskID: sourceTaskID,
+            sourceRuntime: item.source,
+            projectID: project.id,
+            projectName: project.name,
+            title: item.title,
+            targetNodeID: target.id,
+            targetRuntime: target.descriptor.runtime,
+            handoffNote: handoffNote,
+            state: state,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now
+        ) else {
+            handoffFeedback = language.text(
+                "交接草稿内容无效，请缩短标题或说明后重试。",
+                "The handoff draft is invalid. Shorten its title or note and try again."
+            )
+            handoffFeedbackIsError = true
+            return
+        }
+
+        do {
+            if let existingPackage = deliveryOutbox.package(for: envelope.id),
+               existingPackage.envelope != envelope {
+                try deliveryOutbox.cancel(envelopeID: envelope.id)
+            }
+            try envelopeStore.upsert(envelope)
+            handoffNote = envelope.handoffNote
+            handoffFeedback = localHandoffSavedMessage(state)
+        } catch {
+            handoffFeedback = language.text(
+                "无法保存本地交接草稿，请稍后重试。",
+                "Could not save the local handoff draft. Try again."
+            )
+            handoffFeedbackIsError = true
+        }
+    }
+
+    private func prepareDeliveryPackage() {
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
+        guard let envelope = selectedEnvelope, envelope.state == .ready else {
+            deliveryFeedback = language.text(
+                "请先把交接标记为本机就绪。",
+                "Mark the handoff locally ready first."
+            )
+            deliveryFeedbackIsError = true
+            return
+        }
+        do {
+            _ = try deliveryOutbox.prepare(envelope: envelope)
+            deliveryFeedback = language.text(
+                "已进入本机待投递箱，尚未发送。",
+                "Added to the local outbox. It has not been sent."
+            )
+        } catch {
+            deliveryFeedback = language.text(
+                "无法生成本机投递包，请检查交接内容后重试。",
+                "Could not prepare the local package. Review the handoff and try again."
+            )
+            deliveryFeedbackIsError = true
+        }
+    }
+
+    private func cancelDeliveryPackage() {
+        deliveryFeedback = nil
+        deliveryFeedbackIsError = false
+        guard let envelope = selectedEnvelope else { return }
+        do {
+            try deliveryOutbox.cancel(envelopeID: envelope.id)
+            deliveryFeedback = language.text(
+                "本机投递包已取消，交接仍保留为本机就绪。",
+                "Local package cancelled. The handoff remains locally ready."
+            )
+        } catch {
+            deliveryFeedback = language.text(
+                "无法取消本机投递包，请稍后重试。",
+                "Could not cancel the local package. Try again."
+            )
+            deliveryFeedbackIsError = true
+        }
+    }
+
+    private var normalizedHandoffNote: String {
+        let lines = handoffNote
+            .components(separatedBy: .newlines)
+            .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            .filter { !$0.isEmpty }
+            .prefix(AgentTaskEnvelope.maximumNoteLines)
+        return String(
+            lines.joined(separator: "\n")
+                .prefix(AgentTaskEnvelope.maximumNoteLength)
+        )
+    }
+
+    private func localHandoffSavedMessage(
+        _ state: AgentTaskEnvelopeState
+    ) -> String {
+        switch state {
+        case .draft:
+            return language.text(
+                "草稿已保存在本机，尚未发送。",
+                "Draft saved locally. It has not been sent."
+            )
+        case .ready:
+            return language.text(
+                "已标记为本机就绪，尚未发送。",
+                "Marked locally ready. It has not been sent."
+            )
+        }
     }
 
     private func taskDetailSection(title: String, systemName: String, text: String) -> some View {
@@ -9724,6 +10501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var statusPopoverEventMonitors: [Any] = []
     private var statusItemAppearanceObservation: NSKeyValueObservation?
     private var activeSpaceObserver: NSObjectProtocol?
+    private var dynamicIslandController: DynamicIslandWindowController?
     private var globalHotKeyRef: EventHotKeyRef?
     private var globalHotKeyHandler: EventHandlerRef?
     private var cancellables = Set<AnyCancellable>()
@@ -9733,12 +10511,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var lastRenderedStatusItemAppearanceName: NSAppearance.Name?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        applyActivationPolicyForVisibleSurfaces()
         settings.themeMode.applyAppearance()
         setupMainMenu()
         debugLog("app launched bundle=\(Bundle.main.bundlePath)")
 
-        createMainWindow()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            createMainWindow(show: true)
+        }
         activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
@@ -9746,7 +10526,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         ) { [weak self] _ in
             self?.updateTaskBoardPollingActivity()
         }
-        setupStatusItemIfNeeded()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            setupStatusItemIfNeeded()
+        }
         observeStatusItemUsage()
         observeSettings()
         settings.globalShortcutRegistration = { [weak self] shortcut in
@@ -9766,6 +10548,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
         store.updateVisibleRuntimeScopes(settings.visibleRuntimeScopes)
         store.start()
+        if settings.displaySurfaceMode.includesDynamicIsland {
+            setupDynamicIsland()
+        }
         updateStore.startAutomaticCheck()
         if CommandLine.arguments.contains("--show-status-popover") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -9778,33 +10563,108 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
     }
 
-    private func createMainWindow() {
-        let width = UsageWidgetView.widgetWidth
-        let height = UsageWidgetView.widgetDefaultHeight
+    private func createMainWindow(show shouldShow: Bool) {
+        if window != nil {
+            if shouldShow {
+                showMainWindow()
+            }
+            return
+        }
+
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let availableSize = CGSize(
+            width: max(1, screenFrame.width - 32),
+            height: max(1, screenFrame.height - 32)
+        )
+        let width = min(UsageWidgetView.widgetWidth, availableSize.width)
+        let height = min(UsageWidgetView.widgetDefaultHeight, availableSize.height)
         let origin = CGPoint(
-            x: max(screenFrame.minX + 16, screenFrame.maxX - width - 28),
-            y: max(screenFrame.minY + 16, screenFrame.maxY - height - 36)
+            x: min(
+                max(screenFrame.midX - width / 2, screenFrame.minX + 16),
+                screenFrame.maxX - width - 16
+            ),
+            y: min(
+                max(screenFrame.midY - height / 2, screenFrame.minY + 16),
+                screenFrame.maxY - height - 16
+            )
         )
 
         let mainWindow = MainAppWindow(contentRect: NSRect(origin: origin, size: CGSize(width: width, height: height)))
         mainWindow.delegate = self
-        mainWindow.minSize = CGSize(width: UsageWidgetView.widgetWidth, height: UsageWidgetView.widgetMinHeight)
-        mainWindow.maxSize = CGSize(width: UsageWidgetView.widgetWidth, height: UsageWidgetView.widgetMaxHeight)
+        mainWindow.minSize = CGSize(
+            width: min(UsageWidgetView.widgetMinWidth, availableSize.width),
+            height: min(UsageWidgetView.widgetMinHeight, availableSize.height)
+        )
         mainWindow.contentMinSize = mainWindow.minSize
-        mainWindow.contentMaxSize = mainWindow.maxSize
         mainWindow.contentView = GlassHostingContainer(
             rootView: UsageWidgetView(
                 store: store,
                 settings: settings,
-                updateStore: updateStore
+                updateStore: updateStore,
+                onOpenSettings: { [weak self] in
+                    self?.openSettingsWindow()
+                }
             ),
             cornerRadius: UsageWidgetView.windowCornerRadius
         )
-        installTitlebarToolbar(on: mainWindow)
         window = mainWindow
         applyMainWindowLevel()
-        showMainWindow()
+        if shouldShow {
+            showMainWindow()
+        }
+    }
+
+    private func setupDynamicIsland() {
+        guard dynamicIslandController == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard self.dynamicIslandController == nil else { return }
+            let controller = DynamicIslandWindowController(
+                store: store,
+                settings: settings,
+                systemMonitor: LocalSystemMonitor(),
+                openMainWindow: { [weak self] in
+                    self?.showMainWindow()
+                }
+            )
+            dynamicIslandController = controller
+            controller.show()
+        }
+    }
+
+    private func stopDynamicIsland() {
+        let controller = dynamicIslandController
+        dynamicIslandController = nil
+        Task { @MainActor in
+            controller?.stop()
+        }
+    }
+
+    private func applyDisplaySurfaceMode(_ mode: DisplaySurfaceMode) {
+        if mode.includesClassicSurface {
+            createMainWindow(show: window?.isVisible != true)
+            setupStatusItemIfNeeded()
+        } else {
+            closeStatusPopover()
+            removeStatusItem()
+            window?.orderOut(nil)
+        }
+
+        if mode.includesDynamicIsland {
+            setupDynamicIsland()
+        } else {
+            stopDynamicIsland()
+        }
+
+        applyActivationPolicyForVisibleSurfaces()
+        updateTaskBoardPollingActivity()
+    }
+
+    private func applyActivationPolicyForVisibleSurfaces() {
+        let shouldUseRegularPolicy = settings.displaySurfaceMode.includesClassicSurface
+            || window?.isVisible == true
+            || settingsWindow?.isVisible == true
+        NSApp.setActivationPolicy(shouldUseRegularPolicy ? .regular : .accessory)
     }
 
     private func installTitlebarToolbar(on window: NSWindow) {
@@ -9834,6 +10694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             self.activeSpaceObserver = nil
         }
         unregisterGlobalHotKey()
+        stopDynamicIsland()
         store.stop()
     }
 
@@ -9887,6 +10748,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         return true
     }
 
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === settingsWindow else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.applyActivationPolicyForVisibleSurfaces()
+        }
+    }
+
     func windowDidMiniaturize(_ notification: Notification) {
         updateTaskBoardPollingActivity()
     }
@@ -9908,9 +10777,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     private func showMainWindow() {
+        if window == nil {
+            createMainWindow(show: false)
+        }
         guard let window else { return }
         NSApp.setActivationPolicy(.regular)
-        setupStatusItemIfNeeded()
+        if settings.displaySurfaceMode.includesClassicSurface {
+            setupStatusItemIfNeeded()
+        }
         closeStatusPopover()
         applyMainWindowLevel()
         if window.isMiniaturized {
@@ -9924,7 +10798,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private func hideMainWindowAfterClose() {
         closeStatusPopover()
         window?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        applyActivationPolicyForVisibleSurfaces()
         updateTaskBoardPollingActivity()
     }
 
@@ -10069,6 +10943,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateStatusItem()
+            }
+            .store(in: &cancellables)
+
+        settings.$displaySurfaceMode
+            .receive(on: RunLoop.main)
+            .sink { [weak self] mode in
+                self?.applyDisplaySurfaceMode(mode)
             }
             .store(in: &cancellables)
 
@@ -10263,6 +11144,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         updateStatusItem()
         button.target = self
         button.action = #selector(statusItemClicked)
+    }
+
+    private func removeStatusItem() {
+        closeStatusPopover()
+        guard let statusItem else { return }
+        statusItemAppearanceObservation = nil
+        NSStatusBar.system.removeStatusItem(statusItem)
+        self.statusItem = nil
+        lastRenderedStatusItemPresentation = nil
+        lastRenderedStatusItemAppearanceName = nil
     }
 
     private func setupStatusItemIfNeeded() {
@@ -10474,6 +11365,14 @@ struct codexUMain {
             exit(QuotaParticleAnimationSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-display-surface") {
+            exit(DisplaySurfaceModeSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-workbench-preferences") {
+            exit(GodexUWorkbenchPreferencesSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-rate-limits") {
             exit(CodexRateLimitNormalizerSelfTest.run() ? 0 : 1)
         }
@@ -10498,8 +11397,64 @@ struct codexUMain {
             exit(AgentSelectionSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-agent-nodes") {
+            exit(AgentNodeSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-agent-identity") {
+            exit(AgentIdentityProfileSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-task-envelopes") {
+            exit(AgentTaskEnvelopeSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-task-envelope-store") {
+            exit(AgentTaskEnvelopeStoreSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-task-delivery-package") {
+            exit(AgentTaskDeliveryPackageSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-codex-token-events") {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-project-index") {
+            exit(GodexUProjectIndexSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-project-index-reader") {
+            exit(GodexUProjectIndexReaderSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--self-test-dynamic-island") {
+            exit(DynamicIslandPresentationSelfTest.run() ? 0 : 1)
+        }
+
+        if CommandLine.arguments.contains("--dump-project-index") {
+            do {
+                let data = try GodexUProjectIndexCodec.encode(
+                    GodexUProjectIndexReader.live().load()
+                )
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data([0x0a]))
+                return
+            } catch {
+                fputs("project_index_unavailable\n", stderr)
+                exit(1)
+            }
+        }
+
+        if CommandLine.arguments.contains("--dump-agent-nodes") {
+            let runtimes = MultiRuntimeUsageReader().load(scopes: [.codex])
+            let nodes = AgentNodeReader().load(
+                codexRuntime: runtimes.runtime(for: .codex),
+                now: Date()
+            )
+            dumpAgentNodesJSON(nodes)
+            return
         }
 
         if CommandLine.arguments.contains("--dump-json") {

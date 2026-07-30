@@ -1,0 +1,28 @@
+# Build results
+bin/
+obj/
+*.user
+*.suo
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.sln.DotSettings.user
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Debug/temp
+build_errors.txt
+test_notif.cs
+*.log
+
+# Publish
+publish/
+release/
+*.exe
+*.pdb
+*.zip

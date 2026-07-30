@@ -1,7 +1,7 @@
 # codexU
 
 > [!IMPORTANT]
-> **Local multi-Agent custom build.** Codex always stays enabled. Settings lets you choose exactly one companion Agent: OpenClaw, Claude Code, or Hermes. Tokens are attributed to the runtime that executed them, tasks carry an explicit source badge, and unselected Agents are not scanned. Automatic upstream update checks are disabled to preserve this customization.
+> **Local-first multi-Agent custom build.** Codex always stays enabled. Settings lets you choose exactly one companion Agent: OpenClaw, Claude Code, or Hermes. Tokens are attributed to the runtime that executed them, tasks carry an explicit source badge, and unselected Agents are not scanned. Optional remote-node observation reads only status explicitly configured by the user; it does not take over an Agent or upload data to a third party. Automatic upstream update checks are disabled to preserve this customization.
 
 ## Source and Acknowledgements
 
@@ -11,11 +11,61 @@ The OpenClaw integration follows the local formats and brand resources from [ope
 
 codexU is a macOS menu bar and desktop app for tracking Codex quota, separate Codex/companion-Agent token usage, and a unified task board.
 
+![codexU v1.2.0 right-side vertical Dynamic Island and local system status](docs/screenshot-v1.2.0-dynamic-island-right.png)
+
 ![codexU v1.1.0 main window with Codex and OpenClaw](docs/screenshot-v1.1.0-main-openclaw.png)
 
 ![codexU v1.1.0 companion Agent selector](docs/screenshot-v1.1.0-agent-settings.png)
 
 ![codexU v1.1.0 Runtime menu](docs/screenshot-v1.1.0-runtime-menu.png)
+
+## Phase 1: Optional Agent Node Observation
+
+The current development branch adds read-only node cards to the existing codexU dashboard. They aggregate local Codex status with user-configured NAS OpenClaw / Hermes status. Users without a NAS do not need any configuration and keep the original local mode. Configured remote nodes use fixed process-count and heartbeat-age probes only: codexU does not dispatch tasks, modify NAS files, or expose SSH hosts, commands, output, or credentials in its public JSON.
+
+![codexU Phase 1 cards for local Codex and NAS OpenClaw / Hermes nodes](docs/screenshot-phase1-agent-nodes.png)
+
+Node configuration stays in the private local file `~/Library/Application Support/codexU/nodes.json`. Copy the [safe example](docs/examples/agent-nodes.example.json) and fill in your own SSH alias and LAN host; never commit real hosts, usernames, addresses, or key paths. When a remote node is unavailable, codexU may show last-known state for up to 24 hours, explicitly marked as cached or stale rather than live.
+
+macOS may require Local Network permission the first time the GUI reaches a LAN host. The source declares the permission purpose and presents a local failure message. Temporary or ad-hoc signed builds may still receive inconsistent permission tracking; public distribution should use an Apple Developer ID signature and notarization as documented in [DISTRIBUTION.md](DISTRIBUTION.md).
+
+## Phase 2C: Mac-Local Read-Only MCP Adapter
+
+The current development branch bundles a local stdio MCP helper at
+`codexU.app/Contents/Helpers/GodexUMCPServer`. It uses standard input/output
+only, opens no listener or LAN service, and never silently edits
+`~/.codex/config.toml`.
+
+The adapter exposes three read-only tools—project list, project detail, and
+handoff list—plus equivalent project/handoff resources. Public results contain
+only normalized project names, task titles, source runtimes, states, times,
+progress, counts, and local runtime availability. It does not read or emit
+conversation bodies, prompts, recent replies, tool arguments, handoff notes,
+raw thread/session IDs, rollout paths, database paths, SSH details, or
+credentials. A successful snapshot may be reused from memory for up to three
+seconds. If a refresh fails, the last successful snapshot may be returned for
+up to 15 minutes with explicit `stale` freshness; after that bound, or when no
+cache exists, the helper returns a bounded error instead of inventing empty
+data.
+
+For a temporary manual connection, developers can use the following snippet as
+a reference and replace the path with their own build. The project does not
+write this configuration on the user's behalf:
+
+```toml
+[mcp_servers.godexu-local]
+command = "/absolute/path/to/codexU.app/Contents/Helpers/GodexUMCPServer"
+```
+
+This phase verifies the local MCP protocol and metadata boundary only. It does
+not claim acceptance of a real Codex model call, NAS/Windows transport, task
+mutation, or cross-device repair.
+
+## v1.2.0 Dynamic Island and Desktop Status
+
+v1.2.0 adds a local macOS Dynamic Island overlay and a lightweight Windows Dynamic Island experiment. The macOS overlay reuses codexU's existing data path for Codex quota, Codex / companion-Agent token accounting, task source labels, local CPU, memory, and temperature / thermal state. It does not introduce a second usage counter.
+
+The island supports a horizontal top capsule plus vertical left and right capsules. Normal left-click still expands or collapses the island. Holding the left and right mouse buttons together enables reposition dragging; releasing snaps the island to the nearest screen edge. Settings can show both the original dashboard/menu-bar surface and Dynamic Island, or choose either surface alone. Quota rendering follows the live Codex response: when only a 7-day window is available, codexU shows `7d` only and does not invent a missing 5-hour reset.
 
 ## v1.1.4 Profile-Matched Metrics
 
@@ -109,7 +159,7 @@ codexU is distributed outside the Mac App Store. On first launch, macOS may bloc
 
 You can also right-click `codexU.app` in Finder and choose **Open**, then confirm the same security prompt.
 
-codexU always reads local Codex data under `~/.codex/`. It reads structured usage and task metadata only for the selected Agent under `~/.openclaw/`, `~/.claude/`, or `~/.hermes/state.db`. This build does not read a NAS OpenClaw instance.
+codexU always reads local Codex data under `~/.codex/`. It reads structured usage and task metadata only for the selected Agent under `~/.openclaw/`, `~/.claude/`, or `~/.hermes/state.db`. Optional node observation reads explicitly configured remote OpenClaw / Hermes status only after the user creates a local `nodes.json`; it does not connect to a NAS by default.
 
 ## Install
 
@@ -175,10 +225,10 @@ make release-all
 Release artifacts are written to `dist/`, for example:
 
 ```text
-dist/codexU-1.1.4-mac-arm64.dmg
-dist/codexU-1.1.4-mac-arm64.dmg.sha256
-dist/codexU-1.1.4-mac-x86_64.dmg
-dist/codexU-1.1.4-mac-x86_64.dmg.sha256
+dist/codexU-1.2.0-mac-arm64.dmg
+dist/codexU-1.2.0-mac-arm64.dmg.sha256
+dist/codexU-1.2.0-mac-x86_64.dmg
+dist/codexU-1.2.0-mac-x86_64.dmg.sha256
 ```
 
 For Developer ID signing and notarization, see [DISTRIBUTION.md](DISTRIBUTION.md).
@@ -221,7 +271,7 @@ Yes. Intel Macs should use `codexU-<version>-mac-x86_64.dmg`. From source, packa
 
 ### Can OpenClaw, Claude Code, and Hermes all be shown at once?
 
-No. v1.1.0 deliberately uses “Codex + one companion Agent.” This avoids scanning tools you are not using and keeps attribution and the menu bar clear. New Agents are added through independent providers without changing the existing providers' accounting.
+No. The current model deliberately uses “Codex + one companion Agent.” This avoids scanning tools you are not using and keeps attribution and the menu bar clear. New Agents are added through independent providers without changing the existing providers' accounting.
 
 ## License
 

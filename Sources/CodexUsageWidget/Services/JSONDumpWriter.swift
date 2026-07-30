@@ -22,6 +22,45 @@ func dumpJSON(_ snapshot: MultiRuntimeUsageSnapshot) {
     }
 }
 
+func dumpAgentNodesJSON(_ snapshots: [AgentNodeSnapshot]) {
+    let object = agentNodesJSONObject(snapshots, generatedAt: Date())
+    if let data = try? JSONSerialization.data(
+        withJSONObject: object,
+        options: [.prettyPrinted, .sortedKeys]
+    ),
+       let text = String(data: data, encoding: .utf8) {
+        print(text)
+    }
+}
+
+func agentNodesJSONObject(
+    _ snapshots: [AgentNodeSnapshot],
+    generatedAt: Date
+) -> [String: Any] {
+    [
+        "schema": "godexu-agent-node-snapshots-v1",
+        "generatedAt": runtimeISOString(generatedAt) ?? "",
+        "nodes": snapshots.map { snapshot in
+            [
+                "id": snapshot.id,
+                "runtime": snapshot.descriptor.runtime.runtimeId,
+                "displayName": snapshot.descriptor.displayName,
+                "deviceName": snapshot.descriptor.deviceName,
+                "location": snapshot.descriptor.location.rawValue,
+                "health": snapshot.health.rawValue,
+                "checkedAt": runtimeISOString(snapshot.checkedAt) ?? "",
+                "lastSeenAt": runtimeJSONValue(runtimeISOString(snapshot.lastSeenAt)),
+                "heartbeatAt": runtimeJSONValue(runtimeISOString(snapshot.heartbeatAt)),
+                "processCount": runtimeJSONValue(snapshot.processCount),
+                "sourceLabel": snapshot.sourceLabel,
+                "detailCode": snapshot.detailCode,
+                "isFromCache": snapshot.isFromCache,
+                "capabilities": snapshot.descriptor.capabilities
+            ] as [String: Any]
+        }
+    ] as [String: Any]
+}
+
 private func runtimeJSONObject(_ runtime: RuntimeUsageSnapshot) -> [String: Any] {
     [
         "id": runtime.id,

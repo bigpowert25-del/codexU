@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "run_id": "godexu-v2-native-workbench-20260730",
+  "created_at": "2026-07-30T13:23:26.360Z",
+  "updated_at": "2026-07-30T13:29:00Z",
+  "objective": "同步 GodexU 2.0 钛金工作室原生工作台到 bigpowert25-del/codexU 的现有草稿 PR",
+  "lifecycle": [
+    "idea_captured",
+    "evidence_reviewed",
+    "candidate_ready",
+    "local_verified",
+    "draft_saved",
+    "human_approved",
+    "user_reported_published",
+    "platform_verified_published",
+    "archived"
+  ],
+  "source": {
+    "kind": "existing_repository",
+    "source_sha": "66a9394762d83921745a6eb1d2d8ced2775342a6",
+    "evidence": [
+      "Local branch codex/dynamic-island-local-prototype extends the existing public draft PR #1.",
+      "The candidate is limited to the approved GodexU 2.0 native workbench file allowlist; .superpowers prototypes are excluded."
+    ]
+  },
+  "gates": {
+    "evidence_review": "passed",
+    "content_contract": "passed",
+    "privacy_scan": "passed",
+    "technical_validation": "passed",
+    "human_content_review": "passed",
+    "human_audio_review": "not_applicable",
+    "rollback_readiness": "passed",
+    "publish_authorization": "passed"
+  },
+  "channels": {
+    "github": {
+      "status": "platform_verified_published",
+      "artifacts": [
+        "Sources/CodexUsageWidget/Domain/GodexUWorkbenchPreferences.swift",
+        "Sources/CodexUsageWidget/UI/GodexUWorkbenchViews.swift",
+        "Sources/CodexUsageWidget/UI/RuntimeViews.swift",
+        "docs/superpowers/runs/godexu-v2-native-workbench-titanium.png"
+      ],
+      "audience": "Public GitHub fork and existing draft pull request reviewers",
+      "publish_actor": "assistant",
+      "published_url": "https://github.com/bigpowert25-del/codexU/pull/1",
+      "verified_at": "2026-07-30T13:29:00Z",
+      "evidence": [
+        "User explicitly authorized continuing, modifying, local installation, and the previously stated GitHub synchronization in the 2026-07-30 conversation.",
+        "Fresh optimized arm64 build, 19 built-in self-tests, parser fixtures, project-index commands, MCP contract/protocol checks, strict code-sign verification, and git diff checks passed.",
+        "The 11-path candidate allowlist matched the working tree with an empty set difference.",
+        "The candidate privacy scan found no user-home paths, LAN addresses, GitHub tokens, API-key assignments, or private-key material.",
+        "The local application was backed up to /Applications/codexU-backup-v1.2.0-20260730-212710.app before installation.",
+        "The installed executable and release-candidate executable shared SHA-256 ef505966bea04bea1fb96d1dc6674404d2d450396ed99acf5d8017fa997c2306.",
+        "Computer Use read-back confirmed Titanium Studio, Sync, visible source labels, loaded official activity, task counts, node status, CPU, memory, and thermal state.",
+        "git ls-remote matched public fork branch SHA 66a9394762d83921745a6eb1d2d8ced2775342a6.",
+        "GitHub read-back confirmed draft PR #1 is open, titled GodexU 2.0 native multi-Agent workbench, and contains the candidate commit."
+      ],
+      "notes": [
+        "Update the existing draft PR only. No upstream push, tag, GitHub Release, DMG upload, or repository visibility change."
+      ]
+    }
+  },
+  "browser_control": {
+    "status": "not_used",
+    "released_at": null,
+    "release_evidence": null
+  },
+  "remaining_work": [],
+  "notes": [
+    "Titanium Studio remains the default workbench skin and Sync remains the default stage."
+  ]
+}

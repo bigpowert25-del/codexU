@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Replaced the former project-ranking tab with a two-pane local project hub that groups observed Codex, OpenClaw, Claude Code, and Hermes tasks without exposing task bodies in the overview.
+- Added local Agent handoff drafts from task details, including visible target node identity, A/B/C policy, bounded notes, and explicit `draft` / `ready` states that never claim delivery.
+- Added the strict `godexu-task-envelopes-v1` local store with UUID idempotency keys, monotonic revisions, atomic writes, exact-key decoding, capacity limits, and fail-closed validation.
+- Kept the existing task-card detail action, Codex thread deep link, summary, progress, recent reply, status item, and Dynamic Island behavior unchanged.
+- Defined MCP as a future adapter over the local project and handoff index; this phase does not install an MCP SDK, start a server, open a port, or modify Agent MCP configuration.
+- Added local Agent identity profiles for Codex, OpenClaw, Claude Code, and Hermes, with editable role names and responsibility summaries from the existing node cards.
+- Added explicit A / B / C policy levels: guarded observation, collaborative draft preparation, and a reserved flexible tier that grants no additional permissions yet.
+- Stored Agent identity overrides in a strict local-only schema that is excluded from public node diagnostics; reset and cancel paths preserve safe defaults.
+- Added opt-in, read-only Agent node cards for local Codex and explicitly configured NAS OpenClaw / Hermes instances.
+- Added strict node configuration validation, fixed probe profiles, local-network permission diagnostics, and a 24-hour last-known cache that is never presented as live health.
+- Kept users without a NAS on the original local-only path and excluded SSH hosts, network addresses, commands, process output, and credentials from public diagnostics.
+
 ## 1.1.4 - 2026-07-18
 
 - Matched the Chinese Codex official-usage presentation to ChatGPT Profile by formatting official totals in `亿` units.

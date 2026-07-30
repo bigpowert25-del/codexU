@@ -1,7 +1,7 @@
 # codexU
 
 > [!IMPORTANT]
-> **本机多 Agent 定制版。** Codex 始终保留，可在设置中单选 OpenClaw、Claude Code 或 Hermes 作为第二 Agent。各 Agent 的 token 按实际执行方分别统计，任务明确标记来源；未选中的 Agent 不会扫描其本机目录。自动上游更新已关闭，避免覆盖本机定制。
+> **本机优先的多 Agent 定制版。** Codex 始终保留，可在设置中单选 OpenClaw、Claude Code 或 Hermes 作为第二 Agent。各 Agent 的 token 按实际执行方分别统计，任务明确标记来源；未选中的 Agent 不会扫描其本机目录。可选的远端节点观察只读取用户显式配置的状态，不接管 Agent，也不把数据上传到第三方。自动上游更新已关闭，避免覆盖本机定制。
 
 [English](README.en.md)
 
@@ -15,11 +15,54 @@ codexU 是一个 macOS 菜单栏与桌面应用，用来查看 Codex 额度、Co
 
 ## 界面截图
 
+![codexU v1.2.0 右侧竖向动态岛与本机状态](docs/screenshot-v1.2.0-dynamic-island-right.png)
+
 ![codexU v1.1.0 Codex 与 OpenClaw 主界面](docs/screenshot-v1.1.0-main-openclaw.png)
 
 ![codexU v1.1.0 第二 Agent 单选设置](docs/screenshot-v1.1.0-agent-settings.png)
 
 ![codexU v1.1.0 菜单栏 Runtime 状态](docs/screenshot-v1.1.0-runtime-menu.png)
+
+## Phase 1：可选的 Agent 节点观察
+
+当前开发分支在原有 codexU 界面中增加了只读节点卡片，用于聚合本机 Codex 以及用户自行配置的 NAS OpenClaw / Hermes 状态。没有 NAS 的用户无需配置，应用会保持原来的本机模式；配置远端节点后，应用只执行固定的进程数和心跳时间探测，不发送任务、不修改 NAS 文件，也不把 SSH 主机、命令、输出或凭据写进公开 JSON。
+
+![codexU Phase 1 本机 Codex 与 NAS OpenClaw / Hermes 节点卡片](docs/screenshot-phase1-agent-nodes.png)
+
+节点配置采用本机私有文件 `~/Library/Application Support/codexU/nodes.json`。可复制 [安全示例](docs/examples/agent-nodes.example.json) 后填写自己的 SSH alias 和局域网主机；不要提交真实主机、用户名、地址或密钥。远端不可达时，界面最多保留 24 小时的最后已知缓存，并明确标为缓存/过期，不会伪装成实时状态。
+
+macOS 图形应用首次访问局域网时可能需要“本地网络”权限。源码已声明用途说明并在失败时提供本地提示；若使用临时/自签构建，macOS 仍可能不稳定地记录该权限。面向其他用户分发时应使用 Apple Developer ID 签名与公证，具体流程见 [DISTRIBUTION.md](DISTRIBUTION.md)。
+
+## Phase 2C：Mac 本机 MCP 只读适配器
+
+当前开发分支提供一个随应用打包的本机 stdio MCP helper：
+`codexU.app/Contents/Helpers/GodexUMCPServer`。它只启动标准输入/输出协议，
+不监听端口、不提供局域网服务，也不会自动修改 `~/.codex/config.toml`。
+
+适配器提供三个只读工具：项目列表、单个项目详情、任务交接列表；同时提供
+等价的项目/交接资源。公开结果只包含规范化后的项目名、任务标题、来源
+Runtime、状态、时间、进度、计数和本机 Runtime 可用性。它不会读取或输出
+对话正文、提示词、最近回复、工具参数、handoff note、原始线程/会话 ID、
+rollout 路径、数据库路径、SSH 信息或凭据。成功快照在 3 秒内直接从内存
+复用；重新读取失败时，15 分钟内的最近成功快照会明确标为 `stale`，超过
+该时限或没有可用缓存时返回受限错误，不会伪造空数据。
+
+开发者如需临时手动连接，可把以下片段作为一次性配置参考，并将路径替换为
+自己构建的应用位置；本项目不会代替用户写入该配置：
+
+```toml
+[mcp_servers.godexu-local]
+command = "/absolute/path/to/codexU.app/Contents/Helpers/GodexUMCPServer"
+```
+
+这一步只验证本机 MCP 协议与元数据边界，不代表已经完成 Codex 模型调用验收、
+NAS/Windows 传输、任务写入或跨设备修复。
+
+## v1.2.0 动态岛与桌面状态
+
+v1.2.0 新增 macOS 本机动态岛浮窗和 Windows 动态岛试验原型。macOS 版本直接复用 codexU 现有数据：Codex 额度、Codex / 第二 Agent 各自 token、任务来源、本机 CPU、内存与温度/热状态都来自同一套统计管线，不重复计算。
+
+动态岛支持顶部横向胶囊、左侧竖向胶囊、右侧竖向胶囊。普通左键仍用于展开/收起；同时按住左键和右键拖动时可以移动位置，松开后自动吸附到最近边缘。设置中可以选择“原有 + 灵动岛”、“仅原有”或“仅灵动岛”。额度显示会自动识别 Codex 当前返回的窗口，只有 7 天额度时只显示 `7d`，不再伪造已经不存在的 5 小时重置。
 
 ## v1.1.4 与个人资料同口径显示
 
@@ -128,7 +171,7 @@ codexU 目前通过 GitHub Release 的 DMG 安装包分发，不经过 Mac App S
 
 也可以在 Finder 中右键点击 `codexU.app`，选择 **打开**，再确认系统安全提示。
 
-codexU 始终读取本机 `~/.codex/`；只读取当前选中 Agent 对应的 `~/.openclaw/`、`~/.claude/` 或 `~/.hermes/state.db` 结构化用量与任务元数据。本定制版不读取 NAS OpenClaw。
+codexU 始终读取本机 `~/.codex/`；只读取当前选中 Agent 对应的 `~/.openclaw/`、`~/.claude/` 或 `~/.hermes/state.db` 结构化用量与任务元数据。可选的节点观察只有在用户创建本机 `nodes.json` 后才读取显式配置的远端 OpenClaw / Hermes 状态；默认不连接 NAS。
 
 ## 安装
 
@@ -194,10 +237,10 @@ make release-all
 产物会写入 `dist/`，例如：
 
 ```text
-dist/codexU-1.1.4-mac-arm64.dmg
-dist/codexU-1.1.4-mac-arm64.dmg.sha256
-dist/codexU-1.1.4-mac-x86_64.dmg
-dist/codexU-1.1.4-mac-x86_64.dmg.sha256
+dist/codexU-1.2.0-mac-arm64.dmg
+dist/codexU-1.2.0-mac-arm64.dmg.sha256
+dist/codexU-1.2.0-mac-x86_64.dmg
+dist/codexU-1.2.0-mac-x86_64.dmg.sha256
 ```
 
 Developer ID 签名和 Apple notarization 流程见 [DISTRIBUTION.md](DISTRIBUTION.md)。
@@ -240,7 +283,7 @@ Developer ID 签名和 Apple notarization 流程见 [DISTRIBUTION.md](DISTRIBUTI
 
 ### 可以同时显示 OpenClaw、Claude Code 和 Hermes 吗？
 
-不能。v1.1.0 的模型是“Codex 固定 + 一个第二 Agent”：在设置中三选一，避免后台扫描未使用的工具，也让 token 归属和菜单栏保持清晰。新增 Agent 通过独立 Provider 接入，不需要改动现有 Provider 的统计。
+不能。当前模型是“Codex 固定 + 一个第二 Agent”：在设置中三选一，避免后台扫描未使用的工具，也让 token 归属和菜单栏保持清晰。新增 Agent 通过独立 Provider 接入，不需要改动现有 Provider 的统计。
 
 ## License
 

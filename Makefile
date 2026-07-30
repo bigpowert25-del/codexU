@@ -6,6 +6,9 @@ DIST_DIR := dist
 APP_DIR := $(BUILD_DIR)/$(APP_NAME).app
 MACOS_DIR := $(APP_DIR)/Contents/MacOS
 RESOURCES_DIR := $(APP_DIR)/Contents/Resources
+HELPERS_DIR := $(APP_DIR)/Contents/Helpers
+MCP_HELPER_PACKAGE := MCPHelper
+MCP_HELPER_PRODUCT := GodexUMCPServer
 SOURCES := $(shell find Sources/CodexUsageWidget -name '*.swift' | sort)
 APP_ICON := Resources/codexU.icns
 DEPLOYMENT_TARGET ?= 14.0
@@ -27,11 +30,14 @@ else
 CODESIGN_FLAGS := --force --deep --options runtime --timestamp --sign "$(SIGN_IDENTITY)" $(CODESIGN_EXTRA_FLAGS)
 endif
 
-.PHONY: build run probe test-rate-limits test-statistics-time-zone test-particle-animation test-task-navigation test-local-system test-agent-selection test-codex-token-events test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
+.PHONY: build build-mcp-helper run probe test-rate-limits test-statistics-time-zone test-particle-animation test-display-surface test-workbench-preferences test-task-navigation test-local-system test-agent-selection test-agent-nodes test-agent-identity test-task-envelopes test-task-envelope-store test-task-delivery-package test-codex-token-events test-project-index test-mcp-helper test-dynamic-island test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
 
-build:
+build-mcp-helper:
+	swift build --package-path "$(MCP_HELPER_PACKAGE)" -c release --triple "$(TARGET_TRIPLE)" --product "$(MCP_HELPER_PRODUCT)"
+
+build: build-mcp-helper
 	rm -rf "$(APP_DIR)"
-	mkdir -p "$(MACOS_DIR)" "$(RESOURCES_DIR)"
+	mkdir -p "$(MACOS_DIR)" "$(RESOURCES_DIR)" "$(HELPERS_DIR)"
 	cp Resources/Info.plist "$(APP_DIR)/Contents/Info.plist"
 	cp "$(APP_ICON)" "$(RESOURCES_DIR)/"
 	cp Resources/*.png "$(RESOURCES_DIR)/"
@@ -40,7 +46,12 @@ build:
 		-o "$(MACOS_DIR)/$(APP_NAME)" \
 		-framework Cocoa \
 		-framework Carbon \
+		-framework Network \
 		-framework SwiftUI
+	HELPER_BIN_DIR="$$(swift build --package-path "$(MCP_HELPER_PACKAGE)" -c release --triple "$(TARGET_TRIPLE)" --show-bin-path)"; \
+		cp "$$HELPER_BIN_DIR/$(MCP_HELPER_PRODUCT)" "$(HELPERS_DIR)/$(MCP_HELPER_PRODUCT)"
+	chmod 755 "$(HELPERS_DIR)/$(MCP_HELPER_PRODUCT)"
+	codesign $(CODESIGN_FLAGS) "$(HELPERS_DIR)/$(MCP_HELPER_PRODUCT)"
 	codesign $(CODESIGN_FLAGS) "$(APP_DIR)"
 	codesign --verify --deep --strict "$(APP_DIR)"
 
@@ -59,6 +70,12 @@ test-statistics-time-zone:
 test-particle-animation:
 	./scripts/test-particle-animation.sh
 
+test-display-surface: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-display-surface
+
+test-workbench-preferences: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-workbench-preferences
+
 test-task-navigation: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-navigation
 
@@ -68,8 +85,32 @@ test-local-system: build
 test-agent-selection: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-agent-selection
 
+test-agent-nodes: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-agent-nodes
+
+test-agent-identity: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-agent-identity
+
+test-task-envelopes: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-envelopes
+
+test-task-envelope-store: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-envelope-store
+
+test-task-delivery-package: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-delivery-package
+
 test-codex-token-events: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-codex-token-events
+
+test-project-index: build
+	CODEXU_SKIP_BUILD=1 ./scripts/test-project-index.sh
+
+test-mcp-helper: build
+	./scripts/test-mcp-helper.sh
+
+test-dynamic-island: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-dynamic-island
 
 test-parsers: build
 	CODEXU_SKIP_BUILD=1 ./scripts/test-parsers.sh
