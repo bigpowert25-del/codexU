@@ -27,7 +27,7 @@ else
 CODESIGN_FLAGS := --force --deep --options runtime --timestamp --sign "$(SIGN_IDENTITY)" $(CODESIGN_EXTRA_FLAGS)
 endif
 
-.PHONY: build run probe test-rate-limits test-statistics-time-zone test-particle-animation test-display-surface test-task-navigation test-local-system test-agent-selection test-agent-nodes test-agent-identity test-task-envelopes test-codex-token-events test-dynamic-island test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
+.PHONY: build run probe test-rate-limits test-statistics-time-zone test-particle-animation test-display-surface test-task-navigation test-local-system test-agent-selection test-agent-nodes test-agent-identity test-task-envelopes test-task-envelope-store test-codex-token-events test-dynamic-island test-parsers install dmg dmg-arm64 dmg-intel checksum checksum-arm64 checksum-intel release release-arm64 release-intel release-all release-package release-check notarize verify clean clean-dist
 
 build:
 	rm -rf "$(APP_DIR)"
@@ -80,6 +80,9 @@ test-agent-identity: build
 
 test-task-envelopes: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-envelopes
+
+test-task-envelope-store: build
+	"$(MACOS_DIR)/$(APP_NAME)" --self-test-task-envelope-store
 
 test-codex-token-events: build
 	"$(MACOS_DIR)/$(APP_NAME)" --self-test-codex-token-events

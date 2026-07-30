@@ -10772,6 +10772,10 @@ struct codexUMain {
             exit(AgentTaskEnvelopeSelfTest.run() ? 0 : 1)
         }
 
+        if CommandLine.arguments.contains("--self-test-task-envelope-store") {
+            exit(AgentTaskEnvelopeStoreSelfTest.run() ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--self-test-codex-token-events") {
             exit(CodexTokenEventNormalizerSelfTest.run() ? 0 : 1)
         }
