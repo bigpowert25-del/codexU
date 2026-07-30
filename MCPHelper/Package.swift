@@ -12,6 +12,14 @@ let package = Package(
         .executable(
             name: "GodexUMCPContractTests",
             targets: ["GodexUMCPContractTests"]
+        ),
+        .executable(
+            name: "GodexUMCPProbe",
+            targets: ["GodexUMCPProbe"]
+        ),
+        .executable(
+            name: "GodexUMCPServer",
+            targets: ["GodexUMCPServer"]
         )
     ],
     dependencies: [
@@ -25,6 +33,16 @@ let package = Package(
         .executableTarget(
             name: "GodexUMCPContractTests",
             dependencies: ["GodexUMCPCore"]
+        ),
+        .executableTarget(
+            name: "GodexUMCPProbe"
+        ),
+        .executableTarget(
+            name: "GodexUMCPServer",
+            dependencies: [
+                "GodexUMCPCore",
+                .product(name: "MCP", package: "swift-sdk")
+            ]
         )
     ],
     swiftLanguageModes: [.v5]
