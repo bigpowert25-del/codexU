@@ -3516,6 +3516,7 @@ struct UsageWidgetView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var settings: AppSettings
     @ObservedObject var updateStore: AppUpdateStore
+    var onOpenSettings: () -> Void = {}
     @StateObject private var systemMonitor = LocalSystemMonitor()
     @StateObject private var nodeStore = AgentNodeStore()
     @StateObject private var identityStore = AgentIdentityProfileStore()
@@ -3524,11 +3525,13 @@ struct UsageWidgetView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var selectedDashboardTab: DashboardTab = .tasks
+    @State private var selectedWorkbenchDestination: GodexUWorkbenchDestination = .overview
+    @State private var selectedWorkbenchProjectID: String?
 
-    static let widgetWidth: CGFloat = 820
-    static let widgetDefaultHeight: CGFloat = 720
-    static let widgetMinHeight: CGFloat = 620
-    static let widgetMaxHeight: CGFloat = 920
+    static let widgetWidth: CGFloat = 1320
+    static let widgetDefaultHeight: CGFloat = 820
+    static let widgetMinWidth: CGFloat = 1040
+    static let widgetMinHeight: CGFloat = 680
     static let windowCornerRadius: CGFloat = 18
 
     private var snapshot: UsageSnapshot { store.snapshot }
@@ -3548,25 +3551,40 @@ struct UsageWidgetView: View {
             nodes: nodeStore.snapshots
         )
     }
+    private var workbenchProjects: [AgentProjectWorkspace] {
+        AgentProjectWorkspaceBuilder.make(
+            taskBoard: combinedTaskBoard,
+            envelopes: envelopeStore.envelopes
+        )
+    }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            windowSurface
-                .ignoresSafeArea(.container, edges: [.top, .bottom])
-                .accessibilityHidden(true)
-            widgetContent
+        GodexUWorkbenchShell(
+            settings: settings,
+            destination: $selectedWorkbenchDestination,
+            onOpenSettings: onOpenSettings
+        ) {
+            workbenchDestinationContent
         }
-        .frame(width: Self.widgetWidth, alignment: .topLeading)
-        .frame(minHeight: Self.widgetMinHeight, maxHeight: .infinity, alignment: .topLeading)
+        .frame(
+            idealWidth: Self.widgetWidth,
+            maxWidth: .infinity,
+            idealHeight: Self.widgetDefaultHeight,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .environment(\.colorScheme, effectiveColorScheme)
         .preferredColorScheme(themeMode.preferredColorScheme)
         .readableForegroundHierarchy(effectiveColorScheme)
+        .environmentObject(nodeStore)
+        .environmentObject(envelopeStore)
+        .environmentObject(identityStore)
         .onAppear {
             themeMode.applyAppearance()
             systemMonitor.start()
             nodeStore.start(codexRuntime: store.runtimeSnapshot(for: .codex))
             store.setTaskBoardSelected(
-                selectedDashboardTab == .tasks || selectedDashboardTab == .projects
+                shouldPollTaskBoard(for: selectedWorkbenchDestination)
             )
         }
         .onDisappear {
@@ -3577,8 +3595,19 @@ struct UsageWidgetView: View {
         .onChange(of: store.runtimeSnapshots) { _, _ in
             nodeStore.updateLocalCodex(store.runtimeSnapshot(for: .codex))
         }
-        .onChange(of: selectedDashboardTab) { _, tab in
-            store.setTaskBoardSelected(tab == .tasks || tab == .projects)
+        .onChange(of: selectedWorkbenchDestination) { _, destination in
+            store.setTaskBoardSelected(shouldPollTaskBoard(for: destination))
+        }
+    }
+
+    private func shouldPollTaskBoard(
+        for destination: GodexUWorkbenchDestination
+    ) -> Bool {
+        switch destination {
+        case .overview, .projects, .tasks:
+            return true
+        case .agents, .usage, .skills:
+            return false
         }
     }
 
@@ -3607,45 +3636,137 @@ struct UsageWidgetView: View {
             )
     }
 
-    private var widgetContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    GodexUWorkbenchHeader(settings: settings)
-                    GodexUCoreOverviewStrip(
+    @ViewBuilder
+    private var workbenchDestinationContent: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                switch selectedWorkbenchDestination {
+                case .overview:
+                    GodexUOverviewDashboard(
                         overview: workbenchOverview,
                         stage: settings.workbenchStage,
                         skin: settings.workbenchSkin,
-                        language: language
-                    )
-                    if shouldShowEnvironmentChecklist {
-                        environmentChecklistSection
-                    }
-                    usageOverviewSection
-                    LocalSystemStatusStrip(
-                        snapshot: systemMonitor.snapshot,
                         language: language,
-                        isCompact: settings.workbenchStage.usesCompactSystemStatus
+                        nodes: nodeStore.snapshots,
+                        projects: workbenchProjects,
+                        systemSnapshot: systemMonitor.snapshot,
+                        identityStore: identityStore,
+                        envelopeStore: envelopeStore,
+                        openProjects: { projectID in
+                            selectedWorkbenchProjectID = projectID
+                            selectedWorkbenchDestination = .projects
+                        },
+                        openTasks: {
+                            selectedWorkbenchDestination = .tasks
+                        },
+                        openAgents: {
+                            selectedWorkbenchDestination = .agents
+                        }
                     )
-                    if settings.workbenchStage.showsAgentNodes {
+                case .projects:
+                    themedDestinationSurface(
+                        title: language.text("项目", "Projects"),
+                        detail: language.text(
+                            "跨 Agent 任务与本机交接",
+                            "Cross-Agent tasks and local handoffs"
+                        )
+                    ) {
+                        ProjectWorkspacePanel(
+                            taskBoard: combinedTaskBoard,
+                            usageBoard: snapshot.local?.projectBoard,
+                            language: language,
+                            initialSelectedProjectID: selectedWorkbenchProjectID
+                        )
+                    }
+                case .tasks:
+                    themedDestinationSurface(
+                        title: language.text("任务", "Tasks"),
+                        detail: language.text(
+                            "来源、状态与最近活动",
+                            "Sources, status, and recent activity"
+                        )
+                    ) {
+                        taskBoardContent
+                    }
+                case .agents:
+                    themedDestinationSurface(
+                        title: language.text("Agent 节点", "Agent nodes"),
+                        detail: language.text(
+                            "身份、能力与可验证状态",
+                            "Identity, capabilities, and verified status"
+                        )
+                    ) {
                         AgentNodeStatusSection(
                             profileStore: identityStore,
                             snapshots: nodeStore.snapshots,
                             language: language
                         )
                     }
-                    dashboardTabsSection
+                case .usage:
+                    themedDestinationSurface(
+                        title: language.text("用量", "Usage"),
+                        detail: language.text(
+                            "官方活动与本机归因分开显示",
+                            "Official activity separated from local attribution"
+                        )
+                    ) {
+                        RuntimeSelector(
+                            selected: store.selectedRuntimeScope,
+                            scopes: settings.visibleRuntimeScopes,
+                            language: language
+                        ) { scope in
+                            store.selectRuntime(scope)
+                        }
+                        usageOverviewSection
+                        UsageTrendPanel(
+                            trend: displayedUsageTrend,
+                            runtimeScope: store.selectedRuntimeScope,
+                            language: language
+                        )
+                        if shouldShowEnvironmentChecklist {
+                            environmentChecklistSection
+                        }
+                    }
+                case .skills:
+                    themedDestinationSurface(
+                        title: "Skills",
+                        detail: language.text(
+                            "本机加载与工具使用",
+                            "Local loads and tool usage"
+                        )
+                    ) {
+                        SkillUsagePanel(
+                            skillUsages: snapshot.local?.skillUsages ?? [],
+                            toolUsages: snapshot.local?.toolUsages ?? [],
+                            language: language
+                        )
+                    }
                 }
-                .padding(.bottom, 2)
             }
-            footer
+            .padding(16)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
-        .environmentObject(nodeStore)
-        .environmentObject(envelopeStore)
-        .environmentObject(identityStore)
+        .safeAreaInset(edge: .bottom) {
+            footer
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    GodexUWorkbenchTheme(skin: settings.workbenchSkin)
+                        .shell
+                )
+        }
+    }
+
+    private func themedDestinationSurface<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        GodexUWorkbenchDestinationSurface(
+            title: title,
+            detail: detail,
+            skin: settings.workbenchSkin,
+            content: content
+        )
     }
 
     private var environmentChecklistSection: some View {
@@ -10312,29 +10433,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             return
         }
 
-        let width = UsageWidgetView.widgetWidth
-        let height = UsageWidgetView.widgetDefaultHeight
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let availableSize = CGSize(
+            width: max(1, screenFrame.width - 32),
+            height: max(1, screenFrame.height - 32)
+        )
+        let width = min(UsageWidgetView.widgetWidth, availableSize.width)
+        let height = min(UsageWidgetView.widgetDefaultHeight, availableSize.height)
         let origin = CGPoint(
-            x: max(screenFrame.minX + 16, screenFrame.maxX - width - 28),
-            y: max(screenFrame.minY + 16, screenFrame.maxY - height - 36)
+            x: min(
+                max(screenFrame.midX - width / 2, screenFrame.minX + 16),
+                screenFrame.maxX - width - 16
+            ),
+            y: min(
+                max(screenFrame.midY - height / 2, screenFrame.minY + 16),
+                screenFrame.maxY - height - 16
+            )
         )
 
         let mainWindow = MainAppWindow(contentRect: NSRect(origin: origin, size: CGSize(width: width, height: height)))
         mainWindow.delegate = self
-        mainWindow.minSize = CGSize(width: UsageWidgetView.widgetWidth, height: UsageWidgetView.widgetMinHeight)
-        mainWindow.maxSize = CGSize(width: UsageWidgetView.widgetWidth, height: UsageWidgetView.widgetMaxHeight)
+        mainWindow.minSize = CGSize(
+            width: min(UsageWidgetView.widgetMinWidth, availableSize.width),
+            height: min(UsageWidgetView.widgetMinHeight, availableSize.height)
+        )
         mainWindow.contentMinSize = mainWindow.minSize
-        mainWindow.contentMaxSize = mainWindow.maxSize
         mainWindow.contentView = GlassHostingContainer(
             rootView: UsageWidgetView(
                 store: store,
                 settings: settings,
-                updateStore: updateStore
+                updateStore: updateStore,
+                onOpenSettings: { [weak self] in
+                    self?.openSettingsWindow()
+                }
             ),
             cornerRadius: UsageWidgetView.windowCornerRadius
         )
-        installTitlebarToolbar(on: mainWindow)
         window = mainWindow
         applyMainWindowLevel()
         if shouldShow {

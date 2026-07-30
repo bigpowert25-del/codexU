@@ -13,6 +13,7 @@ struct AgentTaskEnvelope: Identifiable, Codable, Equatable {
     static let maximumTitleLength = 160
     static let maximumNoteLength = 400
     static let maximumNoteLines = 8
+    static let workbenchInboxProjectID = "godexu-inbox"
 
     let id: UUID
     let originNodeID: String
@@ -76,6 +77,32 @@ struct AgentTaskEnvelope: Identifiable, Codable, Equatable {
             state: state,
             createdAt: createdAt,
             updatedAt: updatedAt
+        )
+    }
+
+    static func localWorkbenchDraft(
+        id: UUID,
+        originNodeID: String,
+        title: String,
+        targetNodeID: String,
+        targetRuntime: RuntimeScope,
+        now: Date
+    ) -> AgentTaskEnvelope? {
+        sanitized(
+            id: id,
+            originNodeID: originNodeID,
+            revision: 1,
+            sourceTaskID: "godexu-draft:\(id.uuidString.lowercased())",
+            sourceRuntime: .codex,
+            projectID: workbenchInboxProjectID,
+            projectName: "GodexU Inbox",
+            title: title,
+            targetNodeID: targetNodeID,
+            targetRuntime: targetRuntime,
+            handoffNote: "",
+            state: .draft,
+            createdAt: now,
+            updatedAt: now
         )
     }
 

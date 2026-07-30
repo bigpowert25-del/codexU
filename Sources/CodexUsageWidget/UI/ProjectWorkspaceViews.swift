@@ -4,9 +4,22 @@ struct ProjectWorkspacePanel: View {
     let taskBoard: TaskBoard?
     let usageBoard: ProjectBoard?
     let language: WidgetLanguage
+    let initialSelectedProjectID: String?
 
     @EnvironmentObject private var envelopeStore: AgentTaskEnvelopeStore
     @State private var selectedProjectID: String?
+
+    init(
+        taskBoard: TaskBoard?,
+        usageBoard: ProjectBoard?,
+        language: WidgetLanguage,
+        initialSelectedProjectID: String? = nil
+    ) {
+        self.taskBoard = taskBoard
+        self.usageBoard = usageBoard
+        self.language = language
+        self.initialSelectedProjectID = initialSelectedProjectID
+    }
 
     private var workspaces: [AgentProjectWorkspace] {
         AgentProjectWorkspaceBuilder.make(
@@ -29,6 +42,12 @@ struct ProjectWorkspacePanel: View {
         .frame(minHeight: 300, alignment: .topLeading)
         .onAppear {
             selectFirstProjectIfNeeded()
+        }
+        .onChange(of: initialSelectedProjectID) { _, projectID in
+            guard let projectID,
+                  workspaces.contains(where: { $0.id == projectID })
+            else { return }
+            selectedProjectID = projectID
         }
         .onChange(of: workspaces.map(\.id)) { _, _ in
             selectFirstProjectIfNeeded()
@@ -108,6 +127,11 @@ struct ProjectWorkspacePanel: View {
     private func selectFirstProjectIfNeeded() {
         guard !workspaces.isEmpty else {
             selectedProjectID = nil
+            return
+        }
+        if let initialSelectedProjectID,
+           workspaces.contains(where: { $0.id == initialSelectedProjectID }) {
+            selectedProjectID = initialSelectedProjectID
             return
         }
         if !workspaces.contains(where: { $0.id == selectedProjectID }) {

@@ -527,7 +527,7 @@ private struct AgentNodeStatusTile: View {
     }
 }
 
-private struct AgentIdentityDetailView: View {
+struct AgentIdentityDetailView: View {
     let snapshot: AgentNodeSnapshot
     @ObservedObject var profileStore: AgentIdentityProfileStore
     let language: WidgetLanguage

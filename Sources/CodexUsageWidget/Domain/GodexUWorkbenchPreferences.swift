@@ -216,7 +216,7 @@ enum GodexUSkin: String, CaseIterable, Codable, Identifiable, Equatable {
                     red: 0.953, green: 0.957, blue: 0.969
                 ),
                 sidebarColor: GodexUNormalizedColor(
-                    red: 0.118, green: 0.129, blue: 0.157
+                    red: 0.835, green: 0.855, blue: 0.890
                 ),
                 primaryPanelColor: GodexUNormalizedColor(
                     red: 0.980, green: 0.984, blue: 0.992

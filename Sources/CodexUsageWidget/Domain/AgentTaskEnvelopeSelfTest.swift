@@ -88,6 +88,14 @@ enum AgentTaskEnvelopeSelfTest {
             createdAt: testDate,
             updatedAt: testDate
         )
+        let workbenchDraft = AgentTaskEnvelope.localWorkbenchDraft(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            originNodeID: "codex-local",
+            title: "Prepare a reviewable package",
+            targetNodeID: "nas-hermes",
+            targetRuntime: .hermes,
+            now: testDate
+        )
 
         let activeTask = makeTask(
             id: "codex-active",
@@ -163,6 +171,21 @@ enum AgentTaskEnvelopeSelfTest {
             check(invalidID == nil, "unsafe identifiers should fail"),
             check(invalidTime == nil, "updated time before created time should fail"),
             check(invalidRevision == nil, "revision should start at one"),
+            check(
+                workbenchDraft?.projectID
+                    == AgentTaskEnvelope.workbenchInboxProjectID,
+                "workbench drafts should enter the local inbox"
+            ),
+            check(
+                workbenchDraft?.sourceTaskID
+                    == "godexu-draft:33333333-3333-3333-3333-333333333333",
+                "workbench draft source IDs should be deterministic and safe"
+            ),
+            check(
+                workbenchDraft?.state == .draft
+                    && workbenchDraft?.targetRuntime == .hermes,
+                "workbench packages should remain local drafts for the chosen target"
+            ),
             check(
                 spicy?.tasks.map(\.id) == ["codex-active", "codex-done"],
                 "active work should sort ahead of completed work"
