@@ -29,6 +29,36 @@ Node configuration stays in the private local file `~/Library/Application Suppor
 
 macOS may require Local Network permission the first time the GUI reaches a LAN host. The source declares the permission purpose and presents a local failure message. Temporary or ad-hoc signed builds may still receive inconsistent permission tracking; public distribution should use an Apple Developer ID signature and notarization as documented in [DISTRIBUTION.md](DISTRIBUTION.md).
 
+## Phase 2C: Mac-Local Read-Only MCP Adapter
+
+The current development branch bundles a local stdio MCP helper at
+`codexU.app/Contents/Helpers/GodexUMCPServer`. It uses standard input/output
+only, opens no listener or LAN service, and never silently edits
+`~/.codex/config.toml`.
+
+The adapter exposes three read-only tools—project list, project detail, and
+handoff list—plus equivalent project/handoff resources. Public results contain
+only normalized project names, task titles, source runtimes, states, times,
+progress, counts, and local runtime availability. It does not read or emit
+conversation bodies, prompts, recent replies, tool arguments, handoff notes,
+raw thread/session IDs, rollout paths, database paths, SSH details, or
+credentials. A successful snapshot may be reused from memory for up to three
+seconds; when no cache is available, the helper returns a bounded error instead
+of inventing empty data.
+
+For a temporary manual connection, developers can use the following snippet as
+a reference and replace the path with their own build. The project does not
+write this configuration on the user's behalf:
+
+```toml
+[mcp_servers.godexu-local]
+command = "/absolute/path/to/codexU.app/Contents/Helpers/GodexUMCPServer"
+```
+
+This phase verifies the local MCP protocol and metadata boundary only. It does
+not claim acceptance of a real Codex model call, NAS/Windows transport, task
+mutation, or cross-device repair.
+
 ## v1.2.0 Dynamic Island and Desktop Status
 
 v1.2.0 adds a local macOS Dynamic Island overlay and a lightweight Windows Dynamic Island experiment. The macOS overlay reuses codexU's existing data path for Codex quota, Codex / companion-Agent token accounting, task source labels, local CPU, memory, and temperature / thermal state. It does not introduce a second usage counter.

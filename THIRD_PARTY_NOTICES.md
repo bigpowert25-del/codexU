@@ -111,3 +111,36 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Model Context Protocol Swift SDK and transitive packages
+
+The bundled `GodexUMCPServer` executable is built with the official Model
+Context Protocol Swift SDK. Exact versions and source revisions are locked in
+`MCPHelper/Package.resolved`.
+
+- Model Context Protocol Swift SDK 0.12.1:
+  https://github.com/modelcontextprotocol/swift-sdk
+  - License: licensing transition; applicable code is Apache-2.0 or MIT as
+    described by the upstream `LICENSE`.
+- EventSource 1.4.1: https://github.com/mattt/eventsource
+  - License: MIT.
+- Swift Atomics 1.3.1: https://github.com/apple/swift-atomics
+  - License: Apache-2.0.
+- Swift Collections 1.6.0: https://github.com/apple/swift-collections
+  - License: Apache-2.0.
+- Swift Log 1.14.0: https://github.com/apple/swift-log
+  - License: Apache-2.0. Its notice credits SwiftNIO-derived locking and build
+    scripts.
+- SwiftNIO 2.101.3: https://github.com/apple/swift-nio
+  - License: Apache-2.0. Its upstream notice also identifies included or
+    derived work from Netty, NodeJS llhttp, uSHET, FreeBSD, Swift Base64,
+    AsyncHTTPClient, Swift Certificates, Swift System, and Swift Package
+    Manager under their respective Apache-2.0, MIT, or BSD-3-Clause terms.
+- Swift System 1.7.5: https://github.com/apple/swift-system
+  - License: Apache-2.0.
+
+The Apache License 2.0 is available at
+https://www.apache.org/licenses/LICENSE-2.0. The MIT license text applicable to
+this repository is preserved in `LICENSE`; package-specific copyright notices
+remain in the linked upstream license files. No affiliation or endorsement by
+the Model Context Protocol project or Apple is implied.

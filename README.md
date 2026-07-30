@@ -33,6 +33,30 @@ codexU 是一个 macOS 菜单栏与桌面应用，用来查看 Codex 额度、Co
 
 macOS 图形应用首次访问局域网时可能需要“本地网络”权限。源码已声明用途说明并在失败时提供本地提示；若使用临时/自签构建，macOS 仍可能不稳定地记录该权限。面向其他用户分发时应使用 Apple Developer ID 签名与公证，具体流程见 [DISTRIBUTION.md](DISTRIBUTION.md)。
 
+## Phase 2C：Mac 本机 MCP 只读适配器
+
+当前开发分支提供一个随应用打包的本机 stdio MCP helper：
+`codexU.app/Contents/Helpers/GodexUMCPServer`。它只启动标准输入/输出协议，
+不监听端口、不提供局域网服务，也不会自动修改 `~/.codex/config.toml`。
+
+适配器提供三个只读工具：项目列表、单个项目详情、任务交接列表；同时提供
+等价的项目/交接资源。公开结果只包含规范化后的项目名、任务标题、来源
+Runtime、状态、时间、进度、计数和本机 Runtime 可用性。它不会读取或输出
+对话正文、提示词、最近回复、工具参数、handoff note、原始线程/会话 ID、
+rollout 路径、数据库路径、SSH 信息或凭据。首次读取失败后最多使用 3 秒内
+的内存缓存；没有可用缓存时明确返回受限错误，不会伪造空数据。
+
+开发者如需临时手动连接，可把以下片段作为一次性配置参考，并将路径替换为
+自己构建的应用位置；本项目不会代替用户写入该配置：
+
+```toml
+[mcp_servers.godexu-local]
+command = "/absolute/path/to/codexU.app/Contents/Helpers/GodexUMCPServer"
+```
+
+这一步只验证本机 MCP 协议与元数据边界，不代表已经完成 Codex 模型调用验收、
+NAS/Windows 传输、任务写入或跨设备修复。
+
 ## v1.2.0 动态岛与桌面状态
 
 v1.2.0 新增 macOS 本机动态岛浮窗和 Windows 动态岛试验原型。macOS 版本直接复用 codexU 现有数据：Codex 额度、Codex / 第二 Agent 各自 token、任务来源、本机 CPU、内存与温度/热状态都来自同一套统计管线，不重复计算。
