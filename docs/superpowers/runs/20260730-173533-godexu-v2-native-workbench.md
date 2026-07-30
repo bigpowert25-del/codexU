@@ -120,10 +120,10 @@ Status: `passed`
 | Implementation | `passed` | Native workbench, preferences, and compact Light layout built |
 | Local regression | `passed` | 19/19 routes plus parser, project, MCP, diff, architecture, and signing gates |
 | Real UI | `passed` | Latest development build accepted in Titanium/Sync and Light |
-| Installed app | `authorized_pending` | Backup, install, and smoke test are authorized |
+| Installed app | `passed` | Backup, hash-matched install, and real UI/data smoke passed |
 | NAS / remote Agents | `not_applicable` | No remote access or writes |
 | Windows | `not_applicable` | No Windows work in this slice |
-| GitHub / release | `authorized_pending` | Existing fork draft PR only; no tag or Release |
+| GitHub / release | `platform_verified_published` | Draft PR #1 updated and remote SHA matched |
 
 ## Authorized Finish Run
 
@@ -138,6 +138,20 @@ Status: `passed`
 - Fresh release-candidate verification repeated the optimized build, 19/19
   executable self-tests, parser fixtures, project-index commands, MCP
   contract/protocol checks, strict signing, architecture, hash, and diff gates.
+- Implementation commit:
+  `66a9394762d83921745a6eb1d2d8ced2775342a6`.
+- Existing app backup:
+  `/Applications/codexU-backup-v1.2.0-20260730-212710.app`.
+- Installed app and candidate executable SHA-256:
+  `ef505966bea04bea1fb96d1dc6674404d2d450396ed99acf5d8017fa997c2306`.
+- Installed-app read-back passed with Titanium Studio, Sync, visible metric
+  source labels, loaded official activity, task counts, node status, CPU,
+  memory, and thermal state.
+- Fork branch remote SHA matched the implementation commit before the
+  publication-record update.
+- GitHub read-back confirmed draft PR #1 is open with the title
+  `GodexU 2.0 native multi-Agent workbench`:
+  `https://github.com/bigpowert25-del/codexU/pull/1`.
 
 The seven `.superpowers/` prototype artifacts remain untracked design evidence
 and are not part of the production file map. The installed app still has its
